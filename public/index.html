@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#0b3d91" />
+<title>中国民航注册号查询 · CN Aircraft Finder</title>
+<meta name="description" content="按注册号、机型或航司查询中国民航飞机的详细信息——机型、航司、典型客舱布局。移动端友好，离线可用。" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E%E2%9C%88%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">✈</span>
+    <h1>民航查机</h1>
+    <span class="sub">中国民航飞机注册号查询</span>
+  </div>
+  <button class="icon-btn" id="aboutBtn" title="关于" aria-label="关于">i</button>
+</header>
+
+<main>
+  <section class="search-card">
+    <div class="search-row">
+      <input id="q" type="search" inputmode="search" autocomplete="off" autocorrect="off"
+             autocapitalize="characters" spellcheck="false"
+             placeholder="输入注册号 / 航司 / 机型，例如 B-2445 或 国航 738" />
+      <button id="clearBtn" class="clear-btn" type="button" aria-label="清除">×</button>
+    </div>
+    <div class="filters">
+      <select id="region">
+        <option value="">所有地区</option>
+        <option value="mainland">中国大陆</option>
+        <option value="hk">香港</option>
+        <option value="macau">澳门</option>
+        <option value="tw">台湾</option>
+        <option value="biz">公务机</option>
+        <option value="gov">政府/校飞</option>
+      </select>
+      <select id="category">
+        <option value="">所有类别</option>
+        <option value="widebody">宽体客机</option>
+        <option value="narrowbody">窄体客机</option>
+        <option value="regional">支线</option>
+        <option value="freighter">货机</option>
+        <option value="biz">公务机</option>
+        <option value="heli">直升机</option>
+        <option value="ga">通用航空</option>
+        <option value="other">其他</option>
+      </select>
+    </div>
+    <div class="status" id="status">加载数据中…</div>
+  </section>
+
+  <section id="resultBox" class="result-box" aria-live="polite"></section>
+
+  <section id="suggestList" class="suggest-list" hidden>
+    <h2 class="section-title">热门航司</h2>
+    <div id="topOperators" class="chip-row"></div>
+    <h2 class="section-title">主流机型</h2>
+    <div id="topTypes" class="chip-row"></div>
+  </section>
+</main>
+
+<dialog id="aboutDialog" class="about-dialog">
+  <h2>关于</h2>
+  <p><b>民航查机</b> 提供中国民航飞机的注册号反查工具：输入 B-xxxx 注册号，可看到机型（中文与 ICAO 代码）、运营航司、典型客舱布局。</p>
+  <h3>数据来源</h3>
+  <ul>
+    <li><b>飞机/航司基础数据</b>：来自 <a href="https://opensky-network.org/" target="_blank" rel="noopener">OpenSky Network</a> 月度公开飞机数据库（CC-BY-NC 许可），筛选了中国大陆、香港、澳门、台湾的注册号。</li>
+    <li><b>典型舱位布局</b>：基于公开座位图人工整理，按 <em>(航司, 机型)</em> 提供典型配置。同一航司同一机型实际可能存在多种配置，结果仅供参考。</li>
+    <li><b>参考站点</b>：<a href="http://www.xmyzl.com/?mod=jidui" target="_blank" rel="noopener">民航休闲小站</a>（提供机队动态资讯）。</li>
+  </ul>
+  <h3>注意</h3>
+  <ul>
+    <li>OpenSky 数据按月发布，新引进的飞机可能未及时入库。</li>
+    <li>客舱布局以航司公布为准，本工具显示的是 <em>典型布局</em>，并非每架飞机的实际座椅图。</li>
+    <li>本工具不保留任何用户数据，所有查询都在你的设备上完成。</li>
+  </ul>
+  <p class="meta-line" id="metaLine"></p>
+  <form method="dialog"><button class="primary">关闭</button></form>
+</dialog>
+
+<footer class="footer">
+  <span>开源于 <a href="https://github.com/nightlemon/cn-aircraft-finder" target="_blank" rel="noopener">GitHub</a> · 数据 © OpenSky Network · UI © 2026</span>
+</footer>
+
+<script src="app.js" defer></script>
+</body>
+</html>

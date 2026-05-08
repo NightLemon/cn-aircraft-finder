@@ -1,0 +1,22 @@
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node (if ever needed)
+node_modules/
+
+# Local data caches (the raw download is large; we don't commit it)
+data/raw/
+data/*.csv
+*.tmp
+
+# Build output (we serve directly from public/)
+dist/
