@@ -337,6 +337,18 @@ def main() -> int:
             meta["by_alliance"][al] = meta["by_alliance"].get(al, 0) + 1
     OUT_META.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    # Also publish a slim copy of the cabin-layouts file so the frontend can
+    # back-fill cabin info after recovering an operator from a photo. Comments
+    # (`_*` keys) are dropped to keep payload small.
+    out_layouts = ROOT / "public" / "data" / "cabin_layouts.json"
+    slim = {
+        "by_operator_type": {k: v for k, v in layouts.get("by_operator_type", {}).items()
+                             if isinstance(v, dict) and v.get("layout")},
+        "fallback_by_type": {k: v for k, v in layouts.get("fallback_by_type", {}).items()
+                             if isinstance(v, dict) and v.get("layout")},
+    }
+    out_layouts.write_text(json.dumps(slim, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
     print(f"[build] processed {counter['total']:,} rows", file=sys.stderr)
     print(f"[build] kept {counter['kept']:,} aircraft "
           f"(matched={counter['matched']:,}, gc_unmatched={counter['gc_unmatched']:,})", file=sys.stderr)

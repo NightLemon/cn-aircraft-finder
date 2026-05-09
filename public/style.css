@@ -413,6 +413,15 @@ main { max-width: 720px; margin: 0 auto; padding: 12px; }
   cursor: pointer;
 }
 .op-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.op-source {
+  font-size: 11px;
+  color: var(--fg-mute);
+  margin-left: 4px;
+  padding: 1px 6px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+}
+.line .val .unmatched { color: var(--fg-mute); font-style: italic; }
 
 /* ----- External link pills ----- */
 .links {

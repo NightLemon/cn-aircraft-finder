@@ -20,6 +20,7 @@
 
   let DATA = [];
   let META = {};
+  let LAYOUTS = null;     // { by_operator_type: {...}, fallback_by_type: {...} }
 
   /* ---------------- helpers ---------------- */
   const REGION_LABEL = {
@@ -207,14 +208,73 @@
   }
 
   /* Photo lazy loader — talks to Planespotters' free photo API.
-   * Uses an in-memory cache keyed by registration. Failures are silent. */
+   * Uses an in-memory cache keyed by registration. Failures are silent.
+   * Bonus: when our base data lacks an operator, we try to recover one from
+   * the photo's URL slug (e.g. "/photo/.../b-1245-capital-airlines-airbus-...")
+   * and look it up in OPS_INDEX (a slug → operator record map built from DATA). */
   const PHOTO_CACHE = new Map();
+  let OPS_INDEX = null;     // { 'capital-airlines': { name_zh, short_zh, ... }, ... }
+
+  function buildOpsIndex() {
+    if (OPS_INDEX) return OPS_INDEX;
+    OPS_INDEX = {};
+    for (const a of DATA) {
+      if (!a.operator_en || a.operator_en === '—') continue;
+      const slug = a.operator_en.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      if (!slug) continue;
+      // First write wins (later duplicates from oddly-named records won't override).
+      if (!OPS_INDEX[slug]) {
+        OPS_INDEX[slug] = {
+          name_zh:  a.operator_zh,
+          short_zh: a.operator_short_zh || '',
+          name_en:  a.operator_en,
+          icao:     a.operator_icao || '',
+          iata:     a.operator_iata || '',
+          alliance: a.alliance || '',
+          region:   a.region || '',
+        };
+      }
+    }
+    // A few common slug aliases that don't appear in DATA literally.
+    const ALIASES = {
+      'all-nippon-airways': 'all-nippon-airways',
+      'china-eastern':      'china-eastern-airlines',
+      'china-southern':     'china-southern-airlines',
+      'air-china-cargo':    'air-china-cargo',
+    };
+    for (const [from, to] of Object.entries(ALIASES)) {
+      if (OPS_INDEX[to] && !OPS_INDEX[from]) OPS_INDEX[from] = OPS_INDEX[to];
+    }
+    return OPS_INDEX;
+  }
+
+  // Try to extract "<reg>-<airline-slug>-<model-tokens>" from a Planespotters
+  // photo URL and return the operator slug (lowercase, dashed). Best-effort.
+  function operatorSlugFromPhotoLink(reg, link) {
+    if (!link) return '';
+    const m = link.match(/\/photo\/\d+\/([a-z0-9-]+)/i);
+    if (!m) return '';
+    let slug = m[1].toLowerCase();
+    // Strip the registration prefix, e.g. "b-1245-capital-airlines-..." → "capital-airlines-..."
+    const regSlug = reg.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    if (slug.startsWith(regSlug + '-')) slug = slug.slice(regSlug.length + 1);
+    // Strip the trailing aircraft-type tokens. Look up the longest known prefix in OPS_INDEX.
+    const idx = buildOpsIndex();
+    const tokens = slug.split('-');
+    for (let n = Math.min(6, tokens.length); n >= 1; n--) {
+      const cand = tokens.slice(0, n).join('-');
+      if (idx[cand]) return cand;
+    }
+    return '';
+  }
+
   function attachPhoto(card, reg) {
     const slot = card.querySelector('.photo-slot');
     if (!slot || !reg) return;
     if (PHOTO_CACHE.has(reg)) {
       const v = PHOTO_CACHE.get(reg);
-      if (v) injectPhoto(slot, v); else slot.remove();
+      if (v) { injectPhoto(slot, v); maybeFillOperator(card, reg, v); }
+      else slot.remove();
       return;
     }
     fetch(`https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(reg)}`)
@@ -229,6 +289,7 @@
         };
         PHOTO_CACHE.set(reg, v);
         injectPhoto(slot, v);
+        maybeFillOperator(card, reg, v);
       })
       .catch(() => { PHOTO_CACHE.set(reg, null); slot.remove(); });
   }
@@ -241,10 +302,63 @@
       <div class="photo-credit">© ${escapeHtml(v.photographer || 'planespotters.net')}</div>`;
   }
 
+  // If the card is showing "未匹配到航司", try to look the airline up by parsing
+  // the Planespotters slug. Update DOM in place. We deliberately do NOT show
+  // a cabin layout in this case — we don't know the actual cabin config.
+  function maybeFillOperator(card, reg, photo) {
+    const opVal = card.querySelector('.row-op .val');
+    if (!opVal) return;
+    if (!opVal.querySelector('.unmatched')) return;     // already has an operator
+    const slug = operatorSlugFromPhotoLink(reg, photo && photo.link);
+    if (!slug) return;
+    const idx = buildOpsIndex();
+    const op = idx[slug];
+    if (!op) return;
+    opVal.innerHTML = `<a class="op-link" href="#" data-op-search="${escapeHtml(op.name_zh)}">${escapeHtml(op.name_zh)}</a>` +
+      (op.short_zh ? ` <span class="small">(${escapeHtml(op.short_zh)})</span>` : '') +
+      (op.icao ? ` <span class="small">${escapeHtml(op.icao)}${op.iata ? '/' + escapeHtml(op.iata) : ''}</span>` : '') +
+      ` <span class="op-source" title="航司名根据 Planespotters 照片信息推断">来自照片</span>`;
+    // Add the alliance badge if we now know the alliance.
+    if (op.alliance) {
+      const row1 = card.querySelector('.row1');
+      if (row1 && !row1.querySelector('.alliance-tag')) {
+        row1.insertAdjacentHTML('beforeend', allianceTag(op.alliance));
+      }
+    }
+    // Inject an AeroLOPA link if we now have the IATA code and one isn't already there.
+    if (op.iata) {
+      const links = card.querySelector('.links');
+      if (links && !links.querySelector('.link-pill.aerolopa')) {
+        const before = links.querySelector('.link-pill.jetphotos');
+        const html = `<a href="https://www.aerolopa.com/${encodeURIComponent(op.iata.toLowerCase())}" target="_blank" rel="noopener" class="link-pill aerolopa" title="AeroLOPA — 该航司全机型座位图">真实座位图 ↗</a>`;
+        if (before) before.insertAdjacentHTML('beforebegin', html);
+        else links.insertAdjacentHTML('beforeend', html);
+      }
+    }
+    // Try to backfill the cabin layout: query LAYOUTS table by (op_icao, type).
+    const reg0 = card.dataset.reg;
+    const me = DATA.find((x) => x.reg === reg0);
+    if (LAYOUTS && me && op.icao && me.type) {
+      const key = `${op.icao}:${me.type}`;
+      const cab = (LAYOUTS.by_operator_type && LAYOUTS.by_operator_type[key])
+                  || (LAYOUTS.fallback_by_type && LAYOUTS.fallback_by_type[me.type]);
+      if (cab && cab.layout) {
+        const c = Object.assign({}, cab, {
+          source: (LAYOUTS.by_operator_type && LAYOUTS.by_operator_type[key]) ? 'curated' : 'fallback',
+        });
+        const cabinHtml = renderCabin(c);
+        if (cabinHtml) {
+          card.querySelector('.row-op').insertAdjacentHTML('afterend', cabinHtml);
+        }
+      }
+    }
+  }
+
   function renderCard(a) {
-    const opLink = a.operator_zh && a.operator_zh !== '—'
+    const hasOp = a.operator_zh && a.operator_zh !== '—';
+    const opLink = hasOp
       ? `<a class="op-link" href="#" data-op-search="${escapeHtml(a.operator_zh)}">${escapeHtml(a.operator_zh)}</a>${a.operator_short_zh ? ` <span class="small">(${escapeHtml(a.operator_short_zh)})</span>` : ''}${a.operator_icao ? ` <span class="small">${escapeHtml(a.operator_icao)}${a.operator_iata ? '/' + escapeHtml(a.operator_iata) : ''}</span>` : ''}`
-      : '<span class="small">未匹配到航司</span>';
+      : '<span class="small unmatched">未匹配到航司</span>';
     const typeLine = a.type_zh
       ? `${escapeHtml(a.type_zh)} <span class="small">${escapeHtml(a.type || '')}</span>${a.model && a.model !== a.type_zh ? ` <span class="small">· ${escapeHtml(a.model)}</span>` : ''}`
       : (a.model ? escapeHtml(a.model) : '<span class="small">未知机型</span>');
@@ -254,6 +368,12 @@
     const serial = a.serial ? `<div class="line"><span class="label">序列号</span><span class="val">${escapeHtml(a.serial)}</span></div>` : '';
     const icao24 = a.icao24 ? `<div class="line"><span class="label">ICAO24</span><span class="val" style="font-family:var(--mono)">${escapeHtml(a.icao24.toUpperCase())}</span></div>` : '';
     const showPhoto = !a.retired;     // skip photo fetch for known-deregistered
+    // Only render cabin info when we actually know the operator. The fallback
+    // "typical for type X" layout misleads the reader when we don't even know
+    // the airline (e.g. the Capital Airlines A20N row that has empty operator
+    // in OpenSky). The operator may be filled in later by the photo callback —
+    // we'll re-attach the cabin then if needed.
+    const cabinHtml = hasOp ? renderCabin(a.cabin) : '';
 
     return `
       <article class="result-card${a.retired ? ' is-retired' : (a.inactive ? ' is-inactive' : '')}" data-reg="${escapeHtml(a.reg)}">
@@ -265,8 +385,8 @@
         </div>
         ${showPhoto ? '<div class="photo-slot"></div>' : ''}
         <div class="line"><span class="label">机型</span><span class="val b">${typeLine}</span></div>
-        <div class="line"><span class="label">航司</span><span class="val b">${opLink}</span></div>
-        ${renderCabin(a.cabin)}
+        <div class="line row-op"><span class="label">航司</span><span class="val b">${opLink}</span></div>
+        ${cabinHtml}
         ${built}${inSvc}${retired}${serial}${icao24}
         ${renderLinks(a)}
       </article>`;
@@ -408,6 +528,11 @@
       const acRes = await fetch('data/aircraft.json?v=' + stamp);
       if (!acRes.ok) throw new Error('aircraft.json HTTP ' + acRes.status);
       DATA = await acRes.json();
+      // Optional: cabin layout lookup table for photo-based backfill.
+      try {
+        const lr = await fetch('data/cabin_layouts.json?v=' + stamp);
+        if (lr.ok) LAYOUTS = await lr.json();
+      } catch (_) { /* non-fatal */ }
 
       // Build pre-computed index fields
       for (const a of DATA) {
