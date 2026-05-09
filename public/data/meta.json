@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-09T06:45:32Z",
+  "generated_at": "2026-05-09T07:04:34Z",
   "source_csv": "metadata/aircraft-database-complete-2025-08.csv",
   "snapshot_month": "2025-08",
   "total_aircraft": 35242,
@@ -947,6 +947,8 @@
     "matched": 32220,
     "gc_unmatched": 3022,
     "retired": 494,
-    "active": 34748
+    "active": 31251,
+    "inactive": 3497,
+    "in_mictronics": 31490
   }
 }

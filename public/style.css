@@ -266,11 +266,21 @@ main { max-width: 720px; margin: 0 auto; padding: 12px; }
   color: #8a3a3a;
   border-color: #d8a8a8;
 }
+.status-tag.inactive {
+  background: #f5f0e0;
+  color: #7a6320;
+  border-color: #d4c787;
+}
 @media (prefers-color-scheme: dark) {
   .status-tag.retired {
     background: rgba(180,70,70,0.18);
     color: #ff9999;
     border-color: rgba(220,90,90,0.45);
+  }
+  .status-tag.inactive {
+    background: rgba(180,150,30,0.16);
+    color: #e8d080;
+    border-color: rgba(200,170,50,0.4);
   }
 }
 
@@ -284,6 +294,12 @@ main { max-width: 720px; margin: 0 auto; padding: 12px; }
   text-decoration: line-through;
   text-decoration-thickness: 2px;
   text-decoration-color: rgba(160,80,80,0.55);
+}
+.result-card.is-inactive {
+  opacity: 0.88;
+}
+.result-card.is-inactive .reg {
+  color: var(--fg-soft);
 }
   .region-tag.tw    { background: rgba(60,170,80,0.22); color: #95dba0; }
   .region-tag.macau { background: rgba(120,80,200,0.25); color: #c9b3ff; }

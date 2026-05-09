@@ -42,7 +42,8 @@
 
 | 字段 | 来源 |
 | --- | --- |
-| 注册号 / ICAO24 / 机型代码 / 运营人 ICAO / 序列号 / 出厂年 | [OpenSky Network](https://opensky-network.org/) 月度公开飞机数据库（CC-BY-NC） |
+| 注册号 / ICAO24 / 机型代码 / 运营人 ICAO / 序列号 / 出厂年 / 注册到期日 | [OpenSky Network](https://opensky-network.org/) 月度公开飞机数据库（CC-BY-NC） |
+| **实时活跃判定**（"久未活跃"标签） | [tar1090-db / Mictronics](https://github.com/wiedehopf/tar1090-db) 每周更新的 ADS-B 飞机数据库 |
 | 航司中英文名 / 简称 / IATA 代码 / 所属联盟 | 本仓库 [`data/operators.json`](data/operators.json) 手工维护 |
 | 机型中英文名 / 类别 | 本仓库 [`data/aircraft_types.json`](data/aircraft_types.json) 基于 ICAO Doc 8643 |
 | 典型客舱布局（F/C/W/Y） | 本仓库 [`data/cabin_layouts.json`](data/cabin_layouts.json) 基于公开座位图人工整理 |

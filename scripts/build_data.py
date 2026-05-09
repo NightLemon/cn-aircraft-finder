@@ -24,6 +24,7 @@ csv.field_size_limit(10 * 1024 * 1024)
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW_CSV = ROOT / "data" / "raw" / "opensky.csv"
+MICTRONICS_CSV = ROOT / "data" / "raw" / "mictronics.csv"
 OPERATORS_JSON = ROOT / "data" / "operators.json"
 TYPES_JSON = ROOT / "data" / "aircraft_types.json"
 LAYOUTS_JSON = ROOT / "data" / "cabin_layouts.json"
@@ -146,10 +147,32 @@ def main() -> int:
     types = load_json(TYPES_JSON)
     layouts = load_json(LAYOUTS_JSON)
 
+    # Mictronics tar1090 DB — weekly-updated registry of aircraft seen on ADS-B.
+    # Used as a "is this aircraft still active" signal: if a record is in OpenSky
+    # (which is more comprehensive but slower-updating) but missing from Mictronics,
+    # the aircraft is likely retired or stored.
+    mictronics_icao: set[str] = set()
+    mictronics_reg: set[str] = set()
+    if MICTRONICS_CSV.exists():
+        with MICTRONICS_CSV.open(encoding="utf-8", errors="replace") as f:
+            mrd = csv.reader(f, delimiter=";")
+            for row in mrd:
+                if len(row) < 2:
+                    continue
+                icao = (row[0] or "").strip().lower()
+                rg = (row[1] or "").strip()
+                if icao:
+                    mictronics_icao.add(icao)
+                if rg:
+                    mictronics_reg.add(rg)
+        print(f"[build] Mictronics: {len(mictronics_icao):,} icao24, {len(mictronics_reg):,} regs", file=sys.stderr)
+    else:
+        print("[build] WARNING: Mictronics DB missing; activity check disabled.", file=sys.stderr)
+
     aircraft: list[dict] = []
     seen_regs: set[str] = set()
     counter = {"total": 0, "kept": 0, "matched": 0, "gc_unmatched": 0,
-               "retired": 0, "active": 0}
+               "retired": 0, "active": 0, "inactive": 0, "in_mictronics": 0}
 
     # Snapshot month derived from data/raw/source.txt — used to decide whether
     # ``regUntil`` falls in the past (i.e. aircraft is de-registered/retired).
@@ -225,18 +248,25 @@ def main() -> int:
 
             cabin = resolve_cabin(op_rec.get("icao", "") or op_icao, typecode, layouts)
 
-            # Service status: a record is considered retired when its registration
-            # has expired before the snapshot month. Empty regUntil → assume active.
-            # NOTE: this is a HIGH-CONFIDENCE signal (only ~50% of aircraft have
-            # regUntil filled in, so many genuinely retired ones are still shown
-            # as active). We previously experimented with snapshot diffs to catch
-            # more retirements, but OpenSky's own data quality regressions made
-            # that signal too noisy, so we stick with regUntil only.
+            # ----- Service status -----
+            # Three tiers, in decreasing confidence:
+            #   1. retired (high)    : OpenSky regUntil already past the snapshot.
+            #                          The civil-aviation registry says "de-registered".
+            #   2. inactive (medium) : present in OpenSky but absent from Mictronics
+            #                          tar1090 DB, which is updated weekly from live
+            #                          ADS-B feeds. Likely stored / scrapped / sold.
+            #   3. active            : present in Mictronics, or no signal to suggest otherwise.
+            in_mi = (icao24.lower() in mictronics_icao) or (reg in mictronics_reg)
             retired = bool(reg_until and date_key(reg_until) < snapshot_cutoff)
+            inactive = (not retired) and (not in_mi) and bool(mictronics_icao)
             if retired:
                 counter["retired"] += 1
+            elif inactive:
+                counter["inactive"] += 1
             else:
                 counter["active"] += 1
+            if in_mi:
+                counter["in_mictronics"] += 1
 
             entry = {
                 "reg": reg,
@@ -260,14 +290,15 @@ def main() -> int:
                 "reg_until": reg_until if not retired else "",
                 "next_reg": next_reg,
                 "retired": retired,
+                "inactive": inactive,
                 "status": status,
                 "serial": serial,
                 "cabin": cabin,
             }
-            # Drop empty fields (but keep retired=False explicitly off — only emit when True).
+            # Drop empty fields (but keep retired/inactive=False off — only emit when True).
             cleaned = {}
             for k, v in entry.items():
-                if k == "retired":
+                if k in ("retired", "inactive"):
                     if v:
                         cleaned[k] = True
                     continue

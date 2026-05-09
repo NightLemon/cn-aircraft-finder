@@ -106,7 +106,10 @@
   function statusTag(a) {
     if (a.retired) {
       const d = a.retired_at ? ` · ${escapeHtml(a.retired_at)}` : '';
-      return `<span class="status-tag retired" title="根据 OpenSky regUntil 字段判定该注册号已注销，使用中的可能性低。">已退役${d}</span>`;
+      return `<span class="status-tag retired" title="根据 OpenSky regUntil 字段判定该注册号已注销。">已注销${d}</span>`;
+    }
+    if (a.inactive) {
+      return `<span class="status-tag inactive" title="不在 Mictronics tar1090 实时 ADS-B 数据库中，可能已退役 / 封存 / 转售。">久未活跃</span>`;
     }
     return '';
   }
@@ -152,7 +155,7 @@
     const icao24 = a.icao24 ? `<div class="line"><span class="label">ICAO24</span><span class="val" style="font-family:var(--mono)">${escapeHtml(a.icao24.toUpperCase())}</span></div>` : '';
 
     return `
-      <article class="result-card${a.retired ? ' is-retired' : ''}" data-reg="${escapeHtml(a.reg)}">
+      <article class="result-card${a.retired ? ' is-retired' : (a.inactive ? ' is-inactive' : '')}" data-reg="${escapeHtml(a.reg)}">
         <div class="row1">
           <span class="reg">${escapeHtml(a.reg)}</span>
           ${regionTag(a.region)}
@@ -208,7 +211,8 @@
           if (a.alliance) continue;
         } else if (a.alliance !== alliance) continue;
       }
-      if (stStatus === 'active' && a.retired) continue;
+      if (stStatus === 'active' && (a.retired || a.inactive)) continue;
+      if (stStatus === 'inactive' && !a.inactive) continue;
       if (stStatus === 'retired' && !a.retired) continue;
       if (cat && a.category !== cat) continue;
       const s = qTokens.length ? matchScore(a, qTokens, qReg) : 1;
@@ -216,10 +220,11 @@
         filtered.push([s, a]);
       }
     }
-    // Sort: prefer active over retired (when scores tie), then by score, then by reg.
+    // Sort: active > inactive > retired (by score, then reg).
     filtered.sort((x, y) => {
-      const ar = x[1].retired ? 1 : 0, br = y[1].retired ? 1 : 0;
-      if (ar !== br) return ar - br;
+      const ord = (a) => a.retired ? 2 : (a.inactive ? 1 : 0);
+      const ox = ord(x[1]), oy = ord(y[1]);
+      if (ox !== oy) return ox - oy;
       return y[0] - x[0] || x[1].reg.localeCompare(y[1].reg);
     });
     const list = filtered.map(p => p[1]);
