@@ -227,6 +227,11 @@ def main() -> int:
 
             # Service status: a record is considered retired when its registration
             # has expired before the snapshot month. Empty regUntil → assume active.
+            # NOTE: this is a HIGH-CONFIDENCE signal (only ~50% of aircraft have
+            # regUntil filled in, so many genuinely retired ones are still shown
+            # as active). We previously experimented with snapshot diffs to catch
+            # more retirements, but OpenSky's own data quality regressions made
+            # that signal too noisy, so we stick with regUntil only.
             retired = bool(reg_until and date_key(reg_until) < snapshot_cutoff)
             if retired:
                 counter["retired"] += 1
