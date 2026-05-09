@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Build the final ``aircraft.json`` consumed by the web app.
 
-Inputs:
-  - data/raw/opensky.csv             (downloaded by fetch_opensky.py)
-  - data/operators.json              (curated airline ICAO -> 中文名映射)
-  - data/aircraft_types.json         (typecode -> 中文型号名)
-  - data/cabin_layouts.json          (operator+typecode -> 客舱布局)
+Strategy:
+  - Walk all rows in OpenSky aircraft database (worldwide).
+  - Keep only rows that resolve to a known airline (via operators.json
+    by_icao or by_owner_keyword). This automatically filters out the millions
+    of private/GA/test aircraft and leaves an actionable commercial fleet.
+  - Special case: rows registered in Greater China (CN/HK/MO/TW) are kept even
+    if no airline match — useful for B-XXXX private/business jets that the
+    user may want to look up.
 
-Output:
-  - public/data/aircraft.json        (单文件，前端直接 fetch)
-  - public/data/meta.json            (生成元信息)
+Output fields are intentionally compact to keep aircraft.json small.
 """
 from __future__ import annotations
 import csv
@@ -32,6 +33,11 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 OUT_AIRCRAFT = OUT_DIR / "aircraft.json"
 OUT_META = OUT_DIR / "meta.json"
 
+GREATER_CHINA = {"China", "Hong Kong", "Macao", "Taiwan"}
+GC_REGION_DEFAULT = {
+    "China": "mainland", "Hong Kong": "hk", "Macao": "macau", "Taiwan": "tw",
+}
+
 
 def strip(v: str) -> str:
     return v.strip().strip("'") if v is not None else ""
@@ -41,41 +47,30 @@ def load_json(p: Path) -> dict:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def resolve_operator(operator: str, owner: str, icao: str, iata: str, country: str, ops: dict) -> dict:
-    """Map a row to a normalized operator record."""
+def is_real_op_entry(v: object) -> bool:
+    return isinstance(v, dict) and not v.get("_skip") and "name_zh" in v
+
+
+def resolve_operator(operator: str, owner: str, op_icao: str, op_iata: str, ops: dict):
     by_icao = ops["by_icao"]
     by_kw = ops["by_owner_keyword"]
 
-    # 1. ICAO direct hit (most reliable when present)
-    if icao and icao in by_icao:
-        rec = dict(by_icao[icao])
-        rec["icao"] = icao
-        return rec
+    if op_icao and op_icao in by_icao and is_real_op_entry(by_icao[op_icao]):
+        rec = dict(by_icao[op_icao])
+        rec["icao"] = op_icao
+        return rec, True
 
-    # 2. owner / operator string keyword match
     for field in (operator, owner):
         if not field:
             continue
-        # exact match first
-        if field in by_kw:
-            return dict(by_kw[field])
-        # prefix match (e.g., "Air China Cargo Airlines" → "Air China Cargo")
+        if field in by_kw and is_real_op_entry(by_kw[field]):
+            return dict(by_kw[field]), True
         for k, v in by_kw.items():
+            if not is_real_op_entry(v):
+                continue
             if field.lower().startswith(k.lower()):
-                return dict(v)
-
-    # 3. fallback: keep raw English with region inferred from country
-    region_map = {"China": "mainland", "Hong Kong": "hk", "Macao": "macau", "Taiwan": "tw"}
-    region = region_map.get(country, "other")
-    name_en = operator or owner or "—"
-    return {
-        "icao": icao,
-        "iata": iata,
-        "name_zh": name_en,
-        "short_zh": "",
-        "name_en": name_en,
-        "region": region,
-    }
+                return dict(v), True
+    return None, False
 
 
 def resolve_type(typecode: str, model: str, manufacturer: str, types: dict) -> dict:
@@ -83,7 +78,6 @@ def resolve_type(typecode: str, model: str, manufacturer: str, types: dict) -> d
         rec = dict(types[typecode])
         rec["typecode"] = typecode
         return rec
-    # fallback: just typecode + raw model
     return {
         "typecode": typecode or "",
         "name_en": model or typecode or "—",
@@ -93,7 +87,6 @@ def resolve_type(typecode: str, model: str, manufacturer: str, types: dict) -> d
 
 
 def resolve_cabin(operator_icao: str, typecode: str, layouts: dict) -> dict:
-    """Return cabin layout. Empty dict if unknown."""
     by_op = layouts.get("by_operator_type", {})
     fb = layouts.get("fallback_by_type", {})
     key = f"{operator_icao}:{typecode}"
@@ -117,10 +110,9 @@ def main() -> int:
     types = load_json(TYPES_JSON)
     layouts = load_json(LAYOUTS_JSON)
 
-    region_filter = {"China", "Hong Kong", "Macao", "Taiwan"}
-
     aircraft: list[dict] = []
     seen_regs: set[str] = set()
+    counter = {"total": 0, "kept": 0, "matched": 0, "gc_unmatched": 0}
 
     with RAW_CSV.open(encoding="utf-8") as f:
         rd = csv.reader(f)
@@ -133,17 +125,14 @@ def main() -> int:
         for row in rd:
             if len(row) < len(header):
                 continue
-            country = col(row, "country")
-            if country not in region_filter:
-                continue
+            counter["total"] += 1
             reg = col(row, "registration")
             if not reg:
                 continue
-            # de-dup: keep most-detailed record (we just keep first for now)
             if reg in seen_regs:
                 continue
-            seen_regs.add(reg)
 
+            country = col(row, "country")
             typecode = col(row, "typecode")
             model = col(row, "model")
             manufacturer = col(row, "manufacturerName")
@@ -156,17 +145,36 @@ def main() -> int:
             icao24 = col(row, "icao24")
             serial = col(row, "serialNumber")
 
-            op_rec = resolve_operator(operator, owner, op_icao, op_iata, country, ops)
-            type_rec = resolve_type(typecode, model, manufacturer, types)
-            cabin = resolve_cabin(op_rec.get("icao", "") or op_icao, typecode, layouts)
+            op_rec, matched = resolve_operator(operator, owner, op_icao, op_iata, ops)
+            in_gc = country in GREATER_CHINA
 
-            # skip records that have no useful info at all
-            has_op = bool(op_rec.get("name_zh") and op_rec["name_zh"] != "—")
-            has_type = bool(typecode or model)
-            if not has_op and not has_type:
+            if not matched and not in_gc:
+                continue
+            if not matched and in_gc and not (typecode or model or owner or operator):
                 continue
 
-            aircraft.append({
+            seen_regs.add(reg)
+            counter["kept"] += 1
+            if matched:
+                counter["matched"] += 1
+            else:
+                counter["gc_unmatched"] += 1
+
+            type_rec = resolve_type(typecode, model, manufacturer, types)
+
+            if op_rec is None:
+                op_rec = {
+                    "icao": op_icao,
+                    "iata": op_iata,
+                    "name_zh": operator or owner or "",
+                    "short_zh": "",
+                    "name_en": operator or owner or "",
+                    "region": GC_REGION_DEFAULT.get(country, "other"),
+                }
+
+            cabin = resolve_cabin(op_rec.get("icao", "") or op_icao, typecode, layouts)
+
+            entry = {
                 "reg": reg,
                 "icao24": icao24,
                 "country": country,
@@ -175,25 +183,22 @@ def main() -> int:
                 "type_en": type_rec["name_en"],
                 "category": type_rec.get("category", "other"),
                 "model": model,
-                "manufacturer": manufacturer,
                 "operator_icao": op_rec.get("icao", "") or op_icao,
                 "operator_iata": op_rec.get("iata", "") or op_iata,
                 "operator_zh": op_rec.get("name_zh", "") or operator or owner,
                 "operator_short_zh": op_rec.get("short_zh", ""),
                 "operator_en": op_rec.get("name_en", "") or operator or owner,
-                "owner_raw": owner,
-                "operator_raw": operator,
                 "region": op_rec.get("region", ""),
                 "built": built,
                 "status": status,
                 "serial": serial,
                 "cabin": cabin,
-            })
+            }
+            entry = {k: v for k, v in entry.items() if v not in ("", {}, None)}
+            aircraft.append(entry)
 
-    # sort by registration for stable output
     aircraft.sort(key=lambda a: a["reg"])
 
-    # write
     OUT_AIRCRAFT.write_text(
         json.dumps(aircraft, ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8",
@@ -207,17 +212,21 @@ def main() -> int:
         "by_region": {},
         "by_operator": {},
         "by_type": {},
+        "stats": counter,
     }
     for a in aircraft:
-        meta["by_region"][a["region"]] = meta["by_region"].get(a["region"], 0) + 1
-        op = a["operator_zh"] or "未知"
+        r = a.get("region", "other")
+        meta["by_region"][r] = meta["by_region"].get(r, 0) + 1
+        op = a.get("operator_zh") or "未知"
         meta["by_operator"][op] = meta["by_operator"].get(op, 0) + 1
-        t = a["type"] or "未知"
+        t = a.get("type") or "未知"
         meta["by_type"][t] = meta["by_type"].get(t, 0) + 1
     OUT_META.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print(f"[build] wrote {len(aircraft)} aircraft → {OUT_AIRCRAFT}", file=sys.stderr)
-    print(f"[build] meta → {OUT_META}", file=sys.stderr)
+    print(f"[build] processed {counter['total']:,} rows", file=sys.stderr)
+    print(f"[build] kept {counter['kept']:,} aircraft "
+          f"(matched={counter['matched']:,}, gc_unmatched={counter['gc_unmatched']:,})", file=sys.stderr)
+    print(f"[build] → {OUT_AIRCRAFT}  ({OUT_AIRCRAFT.stat().st_size/1024:.1f} KiB)", file=sys.stderr)
     return 0
 
 

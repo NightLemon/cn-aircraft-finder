@@ -1,12 +1,27 @@
-# 民航查机 · CN Aircraft Finder
+# 查机 · Aircraft Finder
 
-> 用注册号反查中国民航飞机的机型、航司和典型客舱布局。手机友好，纯静态，零后端。
+> 用注册号反查全球主要商业航司飞机的机型、航司和典型客舱布局。手机友好，纯静态，零后端。
 
 🌐 在线查询：<https://nightlemon.github.io/cn-aircraft-finder/>
 
 ## 这是什么
 
-一个能用 `B-2445` 这样的注册号（或 `国航 738`、`国泰 A350` 这种自由组合）反查中国民航飞机的网页应用。覆盖中国大陆 / 香港 / 澳门 / 台湾的注册号，以及部分公务机和政府用机，共约 **7,000+ 架**。
+一个能用 `B-2445` / `N12345` / `JA381A` 这样的注册号（或 `国航 A350`、`达美 738`、`Lufthansa A380` 这种自由组合）反查全球主要商业飞机的网页应用。
+
+**覆盖范围**：约 **3.3 万架**，约 200 家全球主要商业航司，包括：
+
+| 区域 | 主要航司 |
+| --- | --- |
+| **大中华** | 国航、东航、南航、海航、川航、深航、厦航、山航、春秋、吉祥、华夏…；国泰、港航、华民、澳航；华航、长荣、星宇、虎航 |
+| **北美** | 美航、达美、美联航、西南、捷蓝、阿拉斯加、边疆、精神、夏威夷、SkyWest…；加航、西捷、Porter、Flair |
+| **欧洲** | 汉莎、英航、法航、荷航、伊比利亚、伏林、北欧、芬航、瑞航、奥航、瑞安、易捷、维兹、TAP、土耳其、维珍大西洋、爱尔兰、冰岛、挪威… |
+| **日韩** | 全日空、日航、捷星日本、乐桃、天马、星悦…；大韩、韩亚、济州、真航、釜山、德威 |
+| **东南亚** | 新航、酷航、马航、亚航、亚航 X、Batik、泰航、Vietjet、越航、Bamboo、菲航、宿务、鹰航、狮航 |
+| **南亚** | 印航、靛蓝、Vistara、Akasa、SpiceJet、孟航、巴航、斯航 |
+| **中东** | 阿联酋、卡塔尔、阿提哈德、沙航、海湾、阿曼、约航、Flydubai、Air Arabia、以色列航空 |
+| **大洋洲** | 澳航、捷星、维珍澳洲、Rex、新西兰航空、斐济航空 |
+| **拉美 / 非洲 / 俄罗斯** | LATAM、Azul、Gol、墨航、Avianca、Copa；埃塞、南非、肯航、埃及、摩航；俄航、S7、乌拉尔 |
+| **公务机** | NetJets、金鹿 |
 
 输入 `B-2445`，得到：
 
@@ -20,39 +35,41 @@
 
 | 想找什么 | 输什么 |
 | --- | --- |
-| 单架飞机 | `B-2445` 或 `b2445` 或 `B-32QQ` |
-| 某航司全机队 | `国航` / `南航` / `Air China` / `CCA` |
+| 单架飞机 | `B-2445`、`N12345`、`JA381A`、`G-XWBA` |
+| 某航司全机队 | `国航` / `Air China` / `CCA`、`达美` / `Delta`、`Lufthansa` |
 | 某机型 | `A350` / `B789` / `波音 787` |
-| 组合 | `国航 A350` / `南航 77W` / `春秋 A320` |
-| 高级筛选 | 顶部「所有地区」+「所有类别」下拉 |
+| 组合 | `国航 A350` / `达美 350` / `汉莎 A380` |
+| 高级筛选 | 顶部「所有地区」+「所有类别」下拉，按区域/机型类别过滤 |
 
-支持 URL 直链：
-- `?q=B-2445` — 直接打开搜索结果
-- `?reg=B-2445` — 等价
+支持 URL 直链：`?q=B-2445` 或 `?reg=B-2445`。
 
 ## 数据来源
 
 | 字段 | 来源 |
 | --- | --- |
 | 注册号 / ICAO24 / 机型代码 / 运营人 ICAO / 序列号 / 出厂年 | [OpenSky Network](https://opensky-network.org/) 月度公开飞机数据库（CC-BY-NC） |
-| 航司中文名 / 简称 / IATA 代码 | 本仓库 [`data/operators.json`](data/operators.json) 手工维护 |
-| 机型中文名 / 类别 | 本仓库 [`data/aircraft_types.json`](data/aircraft_types.json) 基于 ICAO Doc 8643 |
+| 航司中英文名 / 简称 / IATA 代码 | 本仓库 [`data/operators.json`](data/operators.json) 手工维护 |
+| 机型中英文名 / 类别 | 本仓库 [`data/aircraft_types.json`](data/aircraft_types.json) 基于 ICAO Doc 8643 |
 | 典型客舱布局（F/C/W/Y） | 本仓库 [`data/cabin_layouts.json`](data/cabin_layouts.json) 基于公开座位图人工整理 |
 
-> ⚠️ **关于客舱布局**：同一航司同一机型常有 2~3 种配置（如国航 738 既有 8C+147Y 又有 8C+150Y）。本工具显示的是 **典型布局**，并非每架飞机的实际座椅图。需要精确座位图请查航司官网或 SeatGuru。
+> ⚠️ **关于客舱布局**：同一航司同一机型常有 2~3 种配置（如国航 738 既有 8C+147Y 又有 8C+150Y）。本工具显示的是 **典型布局**，并非每架飞机的实际座椅图。
 >
-> 参考站点：[民航休闲小站](http://www.xmyzl.com/?mod=jidui)（机队动态资讯）。
+> ⚠️ **关于过滤**：为控制数据量，build 脚本只保留能匹配到 200+ 家白名单航司的飞机。私人飞机/通用航空/军用机一般不在内（中国大陆/港澳台注册号宽松保留）。
+>
+> 中文资讯参考：[民航休闲小站](http://www.xmyzl.com/?mod=jidui)。
+
+## 数据规模与性能
+
+- 输入 CSV：~600 万条全球记录（OpenSky 月度快照，~110 MB）
+- 输出 `aircraft.json`：~33,000 条 / ~12 MB（**gzip 后约 600 KB**）
+- GitHub Pages 默认开 gzip，移动 4G 首次加载约 1~2 秒，刷新走 HTTP 缓存。
 
 ## 本地运行
 
 ```bash
-# 准备数据（首次需要联网下载 ~100MB CSV）
-python scripts/fetch_opensky.py
-python scripts/build_data.py
-
-# 启动本地服务
-cd public
-python -m http.server 8000
+python scripts/fetch_opensky.py     # 下载最新月度 CSV (~100 MB)
+python scripts/build_data.py        # 构建 public/data/aircraft.json
+cd public && python -m http.server 8000
 # 浏览器打开 http://localhost:8000
 ```
 
@@ -65,10 +82,10 @@ python -m http.server 8000
 
 ## 维护：怎么补数据？
 
-- 新航司：编辑 `data/operators.json`，往 `by_icao` 或 `by_owner_keyword` 加一条。
-- 新机型：编辑 `data/aircraft_types.json`。
-- 新客舱：编辑 `data/cabin_layouts.json` 的 `by_operator_type`，键格式 `<航司ICAO>:<typecode>`，如 `CCA:B789`。
-- 改完 `python scripts/build_data.py` 重建即可。
+- 新航司：编辑 [`data/operators.json`](data/operators.json)，往 `by_icao` 加一条 ICAO 直查记录，或往 `by_owner_keyword` 加一条 owner/operator 字符串前缀匹配；记得设置正确的 `region`。
+- 新机型：编辑 [`data/aircraft_types.json`](data/aircraft_types.json)。
+- 新客舱：编辑 [`data/cabin_layouts.json`](data/cabin_layouts.json) 的 `by_operator_type`，键格式 `<航司ICAO>:<typecode>`，例如 `DAL:A359`。
+- 改完跑一次 `python scripts/build_data.py` 重建即可。
 
 ## 项目结构
 
@@ -82,8 +99,8 @@ cn-aircraft-finder/
 │       ├── aircraft.json   # 构建产物，前端 fetch
 │       └── meta.json
 ├── data/                   # 数据源（手工维护）
-│   ├── operators.json      # 航司 ICAO/owner 关键词 → 中文名映射
-│   ├── aircraft_types.json # ICAO typecode → 中英机型名 / 类别
+│   ├── operators.json      # 航司 ICAO/owner 关键词 → 中文名映射 (~200 家)
+│   ├── aircraft_types.json # ICAO typecode → 中英机型名 / 类别 (~120 种)
 │   ├── cabin_layouts.json  # (航司, 机型) → 典型客舱布局
 │   └── raw/                # 缓存原始 OpenSky CSV（.gitignore）
 ├── scripts/

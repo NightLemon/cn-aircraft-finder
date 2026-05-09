@@ -22,6 +22,11 @@
   /* ---------------- helpers ---------------- */
   const REGION_LABEL = {
     mainland: '中国大陆', hk: '香港', macau: '澳门', tw: '台湾',
+    us: '美国', ca: '加拿大',
+    eu: '欧陆', uk: '英国/爱尔兰',
+    jp: '日本', kr: '韩国', sea: '东南亚', in: '南亚',
+    me: '中东', oceania: '大洋洲', ru: '俄罗斯',
+    latam: '拉美', africa: '非洲',
     biz: '公务机', gov: '政府/校飞', other: '其他',
   };
 
@@ -36,10 +41,10 @@
   function buildBlob(a) {
     const parts = [
       a.reg, normReg(a.reg),
-      a.type, a.type_zh, a.type_en, a.model, a.manufacturer,
+      a.type, a.type_zh, a.type_en, a.model,
       a.operator_zh, a.operator_short_zh, a.operator_en,
       a.operator_icao, a.operator_iata,
-      a.owner_raw, a.operator_raw,
+      a.country,
     ].filter(Boolean).map((s) => s.toString().toLowerCase());
     return parts.join('|');
   }
@@ -69,8 +74,9 @@
 
   /* ---------------- rendering ---------------- */
   function regionTag(region) {
-    const cls = ['hk','tw','macau','biz','gov'].includes(region) ? region : 'mainland';
-    return `<span class="region-tag ${cls}">${REGION_LABEL[region] || '中国'}</span>`;
+    const known = ['mainland','hk','tw','macau','us','ca','eu','uk','jp','kr','sea','in','me','oceania','ru','latam','africa','biz','gov'];
+    const cls = known.includes(region) ? region : 'other';
+    return `<span class="region-tag ${cls}">${REGION_LABEL[region] || region || '—'}</span>`;
   }
 
   function escapeHtml(s) {
@@ -204,13 +210,14 @@
   async function load() {
     try {
       statusEl.textContent = '加载数据中…';
-      const [acRes, metaRes] = await Promise.all([
-        fetch('data/aircraft.json', { cache: 'force-cache' }),
-        fetch('data/meta.json',     { cache: 'force-cache' }),
-      ]);
+      // Load meta first (small, gives us a version stamp), then fetch data
+      // with that stamp as a cache buster so refreshes pick up new data.
+      const metaRes = await fetch('data/meta.json', { cache: 'no-cache' });
+      META = metaRes.ok ? await metaRes.json() : {};
+      const stamp = encodeURIComponent(META.generated_at || Date.now());
+      const acRes = await fetch('data/aircraft.json?v=' + stamp);
       if (!acRes.ok) throw new Error('aircraft.json HTTP ' + acRes.status);
       DATA = await acRes.json();
-      META = metaRes.ok ? await metaRes.json() : {};
 
       // Build pre-computed index fields
       for (const a of DATA) {
