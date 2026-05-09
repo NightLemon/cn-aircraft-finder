@@ -97,11 +97,11 @@
     "CQH:A21N": {"layout": "240Y", "total": 240, "notes": "春秋 A321neo 全经济舱（高密度）"},
     "CQH:A20N": {"layout": "186Y", "total": 186, "notes": "春秋 A320neo 全经济舱"},
 
-    "CPD:A320": {"layout": "8C + 150Y", "total": 158, "notes": "首都航空 A320"},
-    "CPD:A20N": {"layout": "8C + 150Y", "total": 158, "notes": "首都航空 A320neo（部分高密度版为 12C + 162Y）"},
-    "CPD:A21N": {"layout": "12C + 207Y", "total": 219, "notes": "首都航空 A321neo"},
-    "CPD:A330": {"layout": "30C + 263Y", "total": 293, "notes": "首都航空 A330"},
-    "CPD:A332": {"layout": "30C + 263Y", "total": 293, "notes": "首都航空 A330-200"},
+    "CPD:A320": {"layout": "8C + 150Y", "total": 158, "notes": "首都航空 A320 双舱"},
+    "CPD:A20N": {"layout": "18W + 162Y", "total": 180, "notes": "首都航空 A320neo —— 18 排超经 + 162 经济（无公务舱）"},
+    "CPD:A21N": {"layout": "20W + 198Y", "total": 218, "notes": "首都航空 A321neo —— 超经 + 经济双舱"},
+    "CPD:A330": {"layout": "32C + 261Y", "total": 293, "notes": "首都航空 A330"},
+    "CPD:A332": {"layout": "32C + 261Y", "total": 293, "notes": "首都航空 A330-200"},
 
     "DKH:B738": {"layout": "8C + 156Y", "total": 164, "notes": "吉祥 738 双舱"},
     "DKH:A320": {"layout": "8C + 150Y", "total": 158, "notes": "吉祥 A320 双舱"},
