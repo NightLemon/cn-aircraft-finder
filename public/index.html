@@ -60,6 +60,13 @@
           <option value="gov">政府/校飞</option>
         </optgroup>
       </select>
+      <select id="alliance">
+        <option value="">所有联盟</option>
+        <option value="star">星空联盟</option>
+        <option value="skyteam">天合联盟</option>
+        <option value="oneworld">寰宇一家</option>
+        <option value="none">未加盟</option>
+      </select>
       <select id="category">
         <option value="">所有类别</option>
         <option value="widebody">宽体客机</option>
@@ -87,10 +94,18 @@
 
 <dialog id="aboutDialog" class="about-dialog">
   <h2>关于</h2>
-  <p><b>查机</b> 提供全球主要商业航司飞机的反查工具：输入注册号、航司、机型，可看到机型（中文与 ICAO 代码）、运营航司、典型客舱布局。覆盖中美欧日等主要市场，约 3 万架飞机。</p>
+  <p><b>查机</b> 提供全球主要商业航司飞机的反查工具：输入注册号、航司、机型，可看到机型（中文与 ICAO 代码）、运营航司、所属联盟、典型客舱布局。覆盖三大航空联盟（星空、天合、寰宇一家）全部成员，以及主要独立 / 廉价 / 货运航司，约 3.5 万架飞机。</p>
+  <h3>覆盖范围</h3>
+  <ul>
+    <li><b>三大联盟</b>：星空联盟（Star Alliance）、天合联盟（SkyTeam）、寰宇一家（oneworld）所有客运成员。</li>
+    <li><b>独立大型客运</b>：阿联酋、阿提哈德、维珍澳洲、Flydubai、Norse Atlantic、Jet2.com 等。</li>
+    <li><b>主要廉航</b>：瑞安、易捷、维兹、Spirit、Frontier、JetBlue、亚航(X)、春秋、九元、Cebu、IndiGo 等。</li>
+    <li><b>主要货运</b>：FedEx、UPS、Atlas Air、Polar、Cargolux、Maersk Air Cargo、汉莎货运、卡塔尔货运、新航货运、顺丰、邮航、国货航等。</li>
+    <li><b>区域龙头</b>：印度、东南亚、拉美、非洲、独联体的主要航司。</li>
+  </ul>
   <h3>数据来源</h3>
   <ul>
-    <li><b>飞机/航司基础数据</b>：来自 <a href="https://opensky-network.org/" target="_blank" rel="noopener">OpenSky Network</a> 月度公开飞机数据库（CC-BY-NC 许可），筛选了约 200 家全球主要商业航司。</li>
+    <li><b>飞机/航司基础数据</b>：来自 <a href="https://opensky-network.org/" target="_blank" rel="noopener">OpenSky Network</a> 月度公开飞机数据库（CC-BY-NC 许可）。</li>
     <li><b>典型舱位布局</b>：基于公开座位图人工整理，按 <em>(航司, 机型)</em> 提供典型配置；找不到时按机型给出通用布局。同一航司同一机型实际可能存在多种配置，结果仅供参考。</li>
     <li><b>参考站点</b>：<a href="http://www.xmyzl.com/?mod=jidui" target="_blank" rel="noopener">民航休闲小站</a>（中国机队动态资讯）。</li>
   </ul>

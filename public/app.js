@@ -6,6 +6,7 @@
   const qInput     = $('q');
   const clearBtn   = $('clearBtn');
   const regionSel  = $('region');
+  const allianceSel= $('alliance');
   const categorySel= $('category');
   const statusEl   = $('status');
   const resultBox  = $('resultBox');
@@ -30,6 +31,18 @@
     biz: '公务机', gov: '政府/校飞', other: '其他',
   };
 
+  const ALLIANCE_LABEL = {
+    star:     '星空联盟',
+    skyteam:  '天合联盟',
+    oneworld: '寰宇一家',
+  };
+  // Aliases for free-text search ("Star Alliance", "天合", etc.)
+  const ALLIANCE_ALIASES = {
+    star:     ['星空联盟', '星空', 'star alliance', 'staralliance'],
+    skyteam:  ['天合联盟', '天合', 'skyteam', 'sky team'],
+    oneworld: ['寰宇一家', '寰宇', 'oneworld', 'one world'],
+  };
+
   // Normalize a registration: strip dashes, uppercase. "B2445"/"b-2445" → "B2445".
   const normReg = (s) => (s || '').toString().toUpperCase().replace(/[\s-]/g, '');
 
@@ -46,6 +59,11 @@
       a.operator_icao, a.operator_iata,
       a.country,
     ].filter(Boolean).map((s) => s.toString().toLowerCase());
+    if (a.alliance) {
+      parts.push(a.alliance);
+      const aliases = ALLIANCE_ALIASES[a.alliance];
+      if (aliases) for (const x of aliases) parts.push(x.toLowerCase());
+    }
     return parts.join('|');
   }
 
@@ -77,6 +95,11 @@
     const known = ['mainland','hk','tw','macau','us','ca','eu','uk','jp','kr','sea','in','me','oceania','ru','latam','africa','biz','gov'];
     const cls = known.includes(region) ? region : 'other';
     return `<span class="region-tag ${cls}">${REGION_LABEL[region] || region || '—'}</span>`;
+  }
+
+  function allianceTag(al) {
+    if (!al || !ALLIANCE_LABEL[al]) return '';
+    return `<span class="alliance-tag ${al}" title="${ALLIANCE_LABEL[al]}">${ALLIANCE_LABEL[al]}</span>`;
   }
 
   function escapeHtml(s) {
@@ -117,6 +140,7 @@
         <div class="row1">
           <span class="reg">${escapeHtml(a.reg)}</span>
           ${regionTag(a.region)}
+          ${allianceTag(a.alliance)}
         </div>
         <div class="line"><span class="label">机型</span><span class="val b">${typeLine}</span></div>
         <div class="line"><span class="label">航司</span><span class="val b">${opLine}</span></div>
@@ -144,12 +168,13 @@
     const qTokens = normQ(raw).split(/\s+/).filter(Boolean);
     const qReg = normReg(raw);
     const region = regionSel.value;
+    const alliance = allianceSel.value;
     const cat = categorySel.value;
 
     clearBtn.hidden = !raw.trim();
 
     // No query and no filters → show suggestions instead of a giant list.
-    if (!qTokens.length && !region && !cat) {
+    if (!qTokens.length && !region && !alliance && !cat) {
       resultBox.innerHTML = '';
       suggestList.hidden = false;
       statusEl.textContent = `已加载 ${DATA.length.toLocaleString()} 架飞机。试着搜搜你常见的注册号。`;
@@ -160,6 +185,11 @@
     const filtered = [];
     for (const a of DATA) {
       if (region && a.region !== region) continue;
+      if (alliance) {
+        if (alliance === 'none') {
+          if (a.alliance) continue;
+        } else if (a.alliance !== alliance) continue;
+      }
       if (cat && a.category !== cat) continue;
       const s = qTokens.length ? matchScore(a, qTokens, qReg) : 1;
       if (!qTokens.length || s > 0) {
@@ -169,7 +199,7 @@
     filtered.sort((x, y) => y[0] - x[0] || x[1].reg.localeCompare(y[1].reg));
     const list = filtered.map(p => p[1]);
 
-    statusEl.textContent = qTokens.length || region || cat
+    statusEl.textContent = qTokens.length || region || alliance || cat
       ? `匹配 ${list.length} 条`
       : `已加载 ${DATA.length.toLocaleString()} 架飞机`;
     renderResults(list, qTokens.join(' '));
@@ -238,6 +268,7 @@
   /* ---------------- events ---------------- */
   qInput.addEventListener('input', debouncedSearch);
   regionSel.addEventListener('change', doSearch);
+  allianceSel.addEventListener('change', doSearch);
   categorySel.addEventListener('change', doSearch);
   clearBtn.addEventListener('click', () => {
     qInput.value = ''; clearBtn.hidden = true; doSearch(); qInput.focus();

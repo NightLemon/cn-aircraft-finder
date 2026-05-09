@@ -171,7 +171,7 @@ main { max-width: 720px; margin: 0 auto; padding: 12px; }
 .result-card .row1 {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 .reg {
@@ -211,6 +211,43 @@ main { max-width: 720px; margin: 0 auto; padding: 12px; }
 .region-tag.other    { background: var(--border); color: var(--fg-soft); }
 @media (prefers-color-scheme: dark) {
   .region-tag.hk    { background: rgba(216,48,72,0.25); color: #ff8b9c; }
+  .region-tag.tw    { background: rgba(60,170,80,0.22); color: #95dba0; }
+  .region-tag.macau { background: rgba(120,80,200,0.25); color: #c9b3ff; }
+  .region-tag.biz   { background: rgba(190,140,30,0.22); color: #ffd089; }
+  .region-tag.gov   { background: rgba(180,180,180,0.18); color: #d8d8d8; }
+  .region-tag.us       { background: rgba(70,140,255,0.22); color: #a8c8ff; }
+  .region-tag.ca       { background: rgba(220,120,40,0.22); color: #ffc28a; }
+  .region-tag.eu       { background: rgba(140,110,255,0.25); color: #c5b3ff; }
+  .region-tag.uk       { background: rgba(80,120,220,0.25); color: #a8c0ff; }
+  .region-tag.jp       { background: rgba(220,80,110,0.22); color: #ffa8b8; }
+  .region-tag.kr       { background: rgba(70,130,220,0.22); color: #a5c5ff; }
+  .region-tag.sea      { background: rgba(60,180,110,0.22); color: #92e5b3; }
+  .region-tag.in       { background: rgba(220,170,40,0.22); color: #ffd58a; }
+  .region-tag.me       { background: rgba(190,150,60,0.22); color: #f0d088; }
+  .region-tag.oceania  { background: rgba(50,180,160,0.22); color: #90e2d2; }
+  .region-tag.ru       { background: rgba(220,90,90,0.22); color: #ffaaa8; }
+  .region-tag.latam    { background: rgba(220,140,40,0.22); color: #ffc888; }
+  .region-tag.africa   { background: rgba(180,140,80,0.22); color: #e8c898; }
+  .region-tag.other    { background: var(--border); color: var(--fg-soft); }
+}
+
+/* ===== Alliance badge ===== */
+.alliance-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  border: 1px solid transparent;
+}
+.alliance-tag.star      { background: #fff7e0; color: #8c6500; border-color: #f0d678; }
+.alliance-tag.skyteam   { background: #e6f0ff; color: #1a3e8c; border-color: #9bb6e6; }
+.alliance-tag.oneworld  { background: #fde6ee; color: #a81a4d; border-color: #f0a3bc; }
+@media (prefers-color-scheme: dark) {
+  .alliance-tag.star      { background: rgba(220,170,30,0.18); color: #ffe089; border-color: rgba(220,170,30,0.5); }
+  .alliance-tag.skyteam   { background: rgba(70,120,220,0.20); color: #a8c5ff; border-color: rgba(120,160,220,0.45); }
+  .alliance-tag.oneworld  { background: rgba(220,60,120,0.18); color: #ff9bba; border-color: rgba(220,80,140,0.45); }
+}
   .region-tag.tw    { background: rgba(60,170,80,0.22); color: #95dba0; }
   .region-tag.macau { background: rgba(120,80,200,0.25); color: #c9b3ff; }
   .region-tag.biz   { background: rgba(190,140,30,0.22); color: #ffd089; }

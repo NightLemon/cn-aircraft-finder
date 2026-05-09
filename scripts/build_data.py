@@ -189,6 +189,7 @@ def main() -> int:
                 "operator_short_zh": op_rec.get("short_zh", ""),
                 "operator_en": op_rec.get("name_en", "") or operator or owner,
                 "region": op_rec.get("region", ""),
+                "alliance": op_rec.get("alliance", ""),
                 "built": built,
                 "status": status,
                 "serial": serial,
@@ -212,6 +213,7 @@ def main() -> int:
         "by_region": {},
         "by_operator": {},
         "by_type": {},
+        "by_alliance": {},
         "stats": counter,
     }
     for a in aircraft:
@@ -221,6 +223,9 @@ def main() -> int:
         meta["by_operator"][op] = meta["by_operator"].get(op, 0) + 1
         t = a.get("type") or "未知"
         meta["by_type"][t] = meta["by_type"].get(t, 0) + 1
+        al = a.get("alliance") or ""
+        if al:
+            meta["by_alliance"][al] = meta["by_alliance"].get(al, 0) + 1
     OUT_META.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"[build] processed {counter['total']:,} rows", file=sys.stderr)
