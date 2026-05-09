@@ -15,6 +15,7 @@ Output fields are intentionally compact to keep aircraft.json small.
 from __future__ import annotations
 import csv
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,6 +38,41 @@ GREATER_CHINA = {"China", "Hong Kong", "Macao", "Taiwan"}
 GC_REGION_DEFAULT = {
     "China": "mainland", "Hong Kong": "hk", "Macao": "macau", "Taiwan": "tw",
 }
+
+# Date in YYYY-MM-DD or YYYY-MM or YYYY. We accept any of these.
+_DATE_RE = re.compile(r"^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?$")
+
+
+def parse_date(s: str) -> str:
+    """Normalize an OpenSky date string. Returns 'YYYY-MM-DD' / 'YYYY-MM' / 'YYYY' or ''."""
+    s = (s or "").strip()
+    if not s:
+        return ""
+    m = _DATE_RE.match(s)
+    if not m:
+        return ""
+    y, mo, d = m.group(1), m.group(2), m.group(3)
+    if d:
+        return f"{y}-{mo}-{d}"
+    if mo:
+        return f"{y}-{mo}"
+    return y
+
+
+def parse_year(s: str) -> int | None:
+    s = parse_date(s)
+    return int(s[:4]) if s else None
+
+
+def date_key(s: str) -> str:
+    """Pad a date for ordered comparison. '2017' -> '2017-12-31', '2017-06' -> '2017-06-30'."""
+    if not s:
+        return ""
+    if len(s) == 4:
+        return s + "-12-31"
+    if len(s) == 7:
+        return s + "-30"
+    return s
 
 
 def strip(v: str) -> str:
@@ -112,7 +148,18 @@ def main() -> int:
 
     aircraft: list[dict] = []
     seen_regs: set[str] = set()
-    counter = {"total": 0, "kept": 0, "matched": 0, "gc_unmatched": 0}
+    counter = {"total": 0, "kept": 0, "matched": 0, "gc_unmatched": 0,
+               "retired": 0, "active": 0}
+
+    # Snapshot month derived from data/raw/source.txt — used to decide whether
+    # ``regUntil`` falls in the past (i.e. aircraft is de-registered/retired).
+    src_text = SOURCE_TXT.read_text(encoding="utf-8").strip() if SOURCE_TXT.exists() else ""
+    m = re.search(r"(\d{4})-(\d{2})", src_text)
+    if m:
+        snapshot_month = f"{m.group(1)}-{m.group(2)}"
+    else:
+        snapshot_month = datetime.now(timezone.utc).strftime("%Y-%m")
+    snapshot_cutoff = snapshot_month + "-15"  # mid-month cutoff
 
     with RAW_CSV.open(encoding="utf-8") as f:
         rd = csv.reader(f)
@@ -144,6 +191,10 @@ def main() -> int:
             status = col(row, "status")
             icao24 = col(row, "icao24")
             serial = col(row, "serialNumber")
+            registered = parse_date(col(row, "registered"))
+            reg_until = parse_date(col(row, "regUntil"))
+            built = parse_date(built)
+            next_reg = col(row, "nextReg")
 
             op_rec, matched = resolve_operator(operator, owner, op_icao, op_iata, ops)
             in_gc = country in GREATER_CHINA
@@ -174,6 +225,14 @@ def main() -> int:
 
             cabin = resolve_cabin(op_rec.get("icao", "") or op_icao, typecode, layouts)
 
+            # Service status: a record is considered retired when its registration
+            # has expired before the snapshot month. Empty regUntil → assume active.
+            retired = bool(reg_until and date_key(reg_until) < snapshot_cutoff)
+            if retired:
+                counter["retired"] += 1
+            else:
+                counter["active"] += 1
+
             entry = {
                 "reg": reg,
                 "icao24": icao24,
@@ -191,12 +250,25 @@ def main() -> int:
                 "region": op_rec.get("region", ""),
                 "alliance": op_rec.get("alliance", ""),
                 "built": built,
+                "in_service_at": registered,
+                "retired_at": reg_until if retired else "",
+                "reg_until": reg_until if not retired else "",
+                "next_reg": next_reg,
+                "retired": retired,
                 "status": status,
                 "serial": serial,
                 "cabin": cabin,
             }
-            entry = {k: v for k, v in entry.items() if v not in ("", {}, None)}
-            aircraft.append(entry)
+            # Drop empty fields (but keep retired=False explicitly off — only emit when True).
+            cleaned = {}
+            for k, v in entry.items():
+                if k == "retired":
+                    if v:
+                        cleaned[k] = True
+                    continue
+                if v not in ("", {}, None):
+                    cleaned[k] = v
+            aircraft.append(cleaned)
 
     aircraft.sort(key=lambda a: a["reg"])
 
@@ -209,6 +281,7 @@ def main() -> int:
     meta = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source_csv": source,
+        "snapshot_month": snapshot_month,
         "total_aircraft": len(aircraft),
         "by_region": {},
         "by_operator": {},

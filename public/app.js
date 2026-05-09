@@ -7,6 +7,7 @@
   const clearBtn   = $('clearBtn');
   const regionSel  = $('region');
   const allianceSel= $('alliance');
+  const serviceSel = $('service');
   const categorySel= $('category');
   const statusEl   = $('status');
   const resultBox  = $('resultBox');
@@ -102,6 +103,19 @@
     return `<span class="alliance-tag ${al}" title="${ALLIANCE_LABEL[al]}">${ALLIANCE_LABEL[al]}</span>`;
   }
 
+  function statusTag(a) {
+    if (a.retired) {
+      const d = a.retired_at ? ` · ${escapeHtml(a.retired_at)}` : '';
+      return `<span class="status-tag retired" title="根据 OpenSky regUntil 字段判定该注册号已注销，使用中的可能性低。">已退役${d}</span>`;
+    }
+    return '';
+  }
+
+  function shortYear(s) {
+    if (!s) return '';
+    return s.length >= 4 ? s.slice(0, 4) : s;
+  }
+
   function escapeHtml(s) {
     return (s || '').toString()
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -131,21 +145,24 @@
     const typeLine = a.type_zh
       ? `${escapeHtml(a.type_zh)} <span class="small">${escapeHtml(a.type || '')}</span>${a.model && a.model !== a.type_zh ? ` <span class="small">· ${escapeHtml(a.model)}</span>` : ''}`
       : (a.model ? escapeHtml(a.model) : '<span class="small">未知机型</span>');
-    const built = a.built ? `<div class="line"><span class="label">出厂</span><span class="val">${escapeHtml(a.built)}</span></div>` : '';
+    const built = a.built ? `<div class="line"><span class="label">出厂</span><span class="val">${escapeHtml(shortYear(a.built))} 年</span></div>` : '';
+    const inSvc = a.in_service_at ? `<div class="line"><span class="label">服役</span><span class="val">${escapeHtml(a.in_service_at)} 起</span></div>` : '';
+    const retired = a.retired_at ? `<div class="line"><span class="label">退役</span><span class="val" style="color:var(--fg-mute)">${escapeHtml(a.retired_at)}已注销${a.next_reg ? ` · 后续号 <code>${escapeHtml(a.next_reg)}</code>` : ''}</span></div>` : '';
     const serial = a.serial ? `<div class="line"><span class="label">序列号</span><span class="val">${escapeHtml(a.serial)}</span></div>` : '';
     const icao24 = a.icao24 ? `<div class="line"><span class="label">ICAO24</span><span class="val" style="font-family:var(--mono)">${escapeHtml(a.icao24.toUpperCase())}</span></div>` : '';
 
     return `
-      <article class="result-card" data-reg="${escapeHtml(a.reg)}">
+      <article class="result-card${a.retired ? ' is-retired' : ''}" data-reg="${escapeHtml(a.reg)}">
         <div class="row1">
           <span class="reg">${escapeHtml(a.reg)}</span>
           ${regionTag(a.region)}
           ${allianceTag(a.alliance)}
+          ${statusTag(a)}
         </div>
         <div class="line"><span class="label">机型</span><span class="val b">${typeLine}</span></div>
         <div class="line"><span class="label">航司</span><span class="val b">${opLine}</span></div>
         ${renderCabin(a.cabin)}
-        ${built}${serial}${icao24}
+        ${built}${inSvc}${retired}${serial}${icao24}
       </article>`;
   }
 
@@ -169,12 +186,13 @@
     const qReg = normReg(raw);
     const region = regionSel.value;
     const alliance = allianceSel.value;
+    const stStatus = serviceSel.value;
     const cat = categorySel.value;
 
     clearBtn.hidden = !raw.trim();
 
     // No query and no filters → show suggestions instead of a giant list.
-    if (!qTokens.length && !region && !alliance && !cat) {
+    if (!qTokens.length && !region && !alliance && !stStatus && !cat) {
       resultBox.innerHTML = '';
       suggestList.hidden = false;
       statusEl.textContent = `已加载 ${DATA.length.toLocaleString()} 架飞机。试着搜搜你常见的注册号。`;
@@ -190,16 +208,23 @@
           if (a.alliance) continue;
         } else if (a.alliance !== alliance) continue;
       }
+      if (stStatus === 'active' && a.retired) continue;
+      if (stStatus === 'retired' && !a.retired) continue;
       if (cat && a.category !== cat) continue;
       const s = qTokens.length ? matchScore(a, qTokens, qReg) : 1;
       if (!qTokens.length || s > 0) {
         filtered.push([s, a]);
       }
     }
-    filtered.sort((x, y) => y[0] - x[0] || x[1].reg.localeCompare(y[1].reg));
+    // Sort: prefer active over retired (when scores tie), then by score, then by reg.
+    filtered.sort((x, y) => {
+      const ar = x[1].retired ? 1 : 0, br = y[1].retired ? 1 : 0;
+      if (ar !== br) return ar - br;
+      return y[0] - x[0] || x[1].reg.localeCompare(y[1].reg);
+    });
     const list = filtered.map(p => p[1]);
 
-    statusEl.textContent = qTokens.length || region || alliance || cat
+    statusEl.textContent = qTokens.length || region || alliance || stStatus || cat
       ? `匹配 ${list.length} 条`
       : `已加载 ${DATA.length.toLocaleString()} 架飞机`;
     renderResults(list, qTokens.join(' '));
@@ -269,6 +294,7 @@
   qInput.addEventListener('input', debouncedSearch);
   regionSel.addEventListener('change', doSearch);
   allianceSel.addEventListener('change', doSearch);
+  serviceSel.addEventListener('change', doSearch);
   categorySel.addEventListener('change', doSearch);
   clearBtn.addEventListener('click', () => {
     qInput.value = ''; clearBtn.hidden = true; doSearch(); qInput.focus();

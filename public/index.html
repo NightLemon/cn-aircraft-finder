@@ -67,6 +67,11 @@
         <option value="oneworld">寰宇一家</option>
         <option value="none">未加盟</option>
       </select>
+      <select id="service">
+        <option value="">所有状态</option>
+        <option value="active">仅在役</option>
+        <option value="retired">仅退役</option>
+      </select>
       <select id="category">
         <option value="">所有类别</option>
         <option value="widebody">宽体客机</option>
@@ -113,6 +118,7 @@
   <ul>
     <li>OpenSky 数据按月发布，新引进的飞机可能未及时入库。</li>
     <li>客舱布局以航司公布为准，本工具显示的是 <em>典型布局</em>，并非每架飞机的实际座椅图。</li>
+    <li><b>服役 / 退役</b>：基于 OpenSky <code>regUntil</code>（注册到期）字段判定。如该日期早于数据快照月份，标记为「已退役」。注：OpenSky 仅约 50% 飞机填写此字段，且部分国家的 <code>regUntil</code> 是定期续期日期而非注销日期，故标记仅供参考；某些已停飞的飞机本系统也可能未识别为退役。</li>
     <li>未列入白名单的航司、私人飞机、军用机一般不在数据中（中国大陆/港澳台注册号宽松保留）。</li>
     <li>本工具不保留任何用户数据，所有查询都在你的设备上完成。</li>
   </ul>

@@ -1,6 +1,7 @@
 {
-  "generated_at": "2026-05-09T02:31:49Z",
+  "generated_at": "2026-05-09T03:31:58Z",
   "source_csv": "metadata/aircraft-database-complete-2025-08.csv",
+  "snapshot_month": "2025-08",
   "total_aircraft": 35242,
   "by_region": {
     "mainland": 6550,
@@ -944,6 +945,8 @@
     "total": 609254,
     "kept": 35242,
     "matched": 32220,
-    "gc_unmatched": 3022
+    "gc_unmatched": 3022,
+    "retired": 494,
+    "active": 34748
   }
 }
