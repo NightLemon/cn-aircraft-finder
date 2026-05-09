@@ -132,18 +132,118 @@
       ? `<span class="src" title="按航司+机型整理的典型布局">航司典型</span>`
       : `<span class="src fallback" title="该航司无具体数据，使用机型通用布局">通用布局</span>`;
     const notes = c.notes ? `<div class="notes">${escapeHtml(c.notes)}</div>` : '';
+    const svg = renderCabinSvg(c.layout, c.total);
     return `
       <div class="cabin">
         ${src}
         <span class="layout">${escapeHtml(c.layout)}</span>
         ${total ? '&nbsp;·&nbsp;' + total : ''}
         ${notes}
+        ${svg}
       </div>`;
   }
 
+  /* Build a stylised cabin diagram from a layout string like "8C + 156Y" or
+   * "10F + 42C + 30W + 262Y". Not a real seat map — it's a proportional bar
+   * showing the share of each cabin class plus a count. Shape is a flat ribbon
+   * which avoids the false precision of drawing fake seats. */
+  const CABIN_CLASS = {
+    F: { label: '头等', color: '#a83a3a' },
+    C: { label: '公务', color: '#1957b8' },
+    W: { label: '超经', color: '#7a5cb8' },
+    Y: { label: '经济', color: '#1f8a55' },
+  };
+  function parseLayout(s) {
+    if (!s) return null;
+    // Tolerate things like "纯货机" that aren't really layouts.
+    if (!/[FCWY]/.test(s)) return null;
+    const m = s.match(/(\d+)\s*([FCWY])/g) || [];
+    const parts = m.map((tok) => {
+      const mm = tok.match(/(\d+)\s*([FCWY])/);
+      return { n: parseInt(mm[1], 10), cls: mm[2] };
+    });
+    return parts.length ? parts : null;
+  }
+  function renderCabinSvg(layoutStr, totalSeats) {
+    const parts = parseLayout(layoutStr);
+    if (!parts) return '';
+    // Use a flex div instead of SVG: easier to overflow-hide text on narrow segments.
+    const segs = parts.map((p) =>
+      `<div class="cb-seg" style="flex:${p.n};background:${CABIN_CLASS[p.cls].color}" title="${CABIN_CLASS[p.cls].label} ${p.n} 座"><span>${p.n}${p.cls}</span></div>`
+    ).join('');
+    const legend = parts.map((p) =>
+      `<span class="cs"><span class="sw" style="background:${CABIN_CLASS[p.cls].color}"></span>${CABIN_CLASS[p.cls].label} ${p.n}</span>`
+    ).join('');
+    return `
+      <div class="cabin-bar" role="img" aria-label="客舱比例：${escapeHtml(layoutStr)}">${segs}</div>
+      <div class="cabin-legend">${legend}</div>`;
+  }
+
+  /* Build the row of external deep links. We only add links we can construct
+   * safely from the data we already have — registration, ICAO24, IATA op code. */
+  function renderLinks(a) {
+    const reg = a.reg;
+    const regLower = reg.toLowerCase().replace(/\s/g, '');
+    const icao24 = (a.icao24 || '').toLowerCase();
+    const iata = (a.operator_iata || '').toLowerCase();
+    const items = [];
+    items.push({ href: `https://www.flightradar24.com/data/aircraft/${encodeURIComponent(regLower)}`,
+                 label: '实时位置 ↗', cls: 'fr24', title: 'Flightradar24 — 当前飞行轨迹和历史' });
+    if (icao24) {
+      items.push({ href: `https://globe.adsbexchange.com/?icao=${encodeURIComponent(icao24)}`,
+                   label: 'ADS-B Exchange ↗', cls: 'adsbx', title: '无过滤的实时 ADS-B 追踪' });
+    }
+    if (iata) {
+      items.push({ href: `https://www.aerolopa.com/${encodeURIComponent(iata)}`,
+                   label: '真实座位图 ↗', cls: 'aerolopa', title: 'AeroLOPA — 该航司全机型座位图' });
+    }
+    items.push({ href: `https://www.jetphotos.com/registration/${encodeURIComponent(reg)}`,
+                 label: 'JetPhotos ↗', cls: 'jetphotos', title: 'JetPhotos — 这架飞机的照片' });
+    items.push({ href: `https://www.planespotters.net/search?q=${encodeURIComponent(reg)}`,
+                 label: 'Planespotters ↗', cls: 'planespotters', title: 'Planespotters — 历史与照片' });
+    return `<div class="links">${items.map(it =>
+      `<a href="${it.href}" target="_blank" rel="noopener" class="link-pill ${it.cls}" title="${escapeHtml(it.title)}">${it.label}</a>`
+    ).join('')}</div>`;
+  }
+
+  /* Photo lazy loader — talks to Planespotters' free photo API.
+   * Uses an in-memory cache keyed by registration. Failures are silent. */
+  const PHOTO_CACHE = new Map();
+  function attachPhoto(card, reg) {
+    const slot = card.querySelector('.photo-slot');
+    if (!slot || !reg) return;
+    if (PHOTO_CACHE.has(reg)) {
+      const v = PHOTO_CACHE.get(reg);
+      if (v) injectPhoto(slot, v); else slot.remove();
+      return;
+    }
+    fetch(`https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(reg)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        const p = j && j.photos && j.photos[0];
+        if (!p) { PHOTO_CACHE.set(reg, null); slot.remove(); return; }
+        const v = {
+          src: (p.thumbnail_large && p.thumbnail_large.src) || (p.thumbnail && p.thumbnail.src),
+          link: p.link,
+          photographer: p.photographer || '',
+        };
+        PHOTO_CACHE.set(reg, v);
+        injectPhoto(slot, v);
+      })
+      .catch(() => { PHOTO_CACHE.set(reg, null); slot.remove(); });
+  }
+  function injectPhoto(slot, v) {
+    if (!v || !v.src) { slot.remove(); return; }
+    slot.innerHTML = `
+      <a href="${v.link}" target="_blank" rel="noopener" title="${escapeHtml(v.photographer ? '摄影：' + v.photographer : '查看大图')} ↗">
+        <img src="${v.src}" alt="" loading="lazy" />
+      </a>
+      <div class="photo-credit">© ${escapeHtml(v.photographer || 'planespotters.net')}</div>`;
+  }
+
   function renderCard(a) {
-    const opLine = a.operator_zh && a.operator_zh !== '—'
-      ? `${escapeHtml(a.operator_zh)}${a.operator_short_zh ? ` <span class="small">(${escapeHtml(a.operator_short_zh)})</span>` : ''}${a.operator_icao ? ` <span class="small">${escapeHtml(a.operator_icao)}${a.operator_iata ? '/' + escapeHtml(a.operator_iata) : ''}</span>` : ''}`
+    const opLink = a.operator_zh && a.operator_zh !== '—'
+      ? `<a class="op-link" href="#" data-op-search="${escapeHtml(a.operator_zh)}">${escapeHtml(a.operator_zh)}</a>${a.operator_short_zh ? ` <span class="small">(${escapeHtml(a.operator_short_zh)})</span>` : ''}${a.operator_icao ? ` <span class="small">${escapeHtml(a.operator_icao)}${a.operator_iata ? '/' + escapeHtml(a.operator_iata) : ''}</span>` : ''}`
       : '<span class="small">未匹配到航司</span>';
     const typeLine = a.type_zh
       ? `${escapeHtml(a.type_zh)} <span class="small">${escapeHtml(a.type || '')}</span>${a.model && a.model !== a.type_zh ? ` <span class="small">· ${escapeHtml(a.model)}</span>` : ''}`
@@ -153,6 +253,7 @@
     const retired = a.retired_at ? `<div class="line"><span class="label">退役</span><span class="val" style="color:var(--fg-mute)">${escapeHtml(a.retired_at)}已注销${a.next_reg ? ` · 后续号 <code>${escapeHtml(a.next_reg)}</code>` : ''}</span></div>` : '';
     const serial = a.serial ? `<div class="line"><span class="label">序列号</span><span class="val">${escapeHtml(a.serial)}</span></div>` : '';
     const icao24 = a.icao24 ? `<div class="line"><span class="label">ICAO24</span><span class="val" style="font-family:var(--mono)">${escapeHtml(a.icao24.toUpperCase())}</span></div>` : '';
+    const showPhoto = !a.retired;     // skip photo fetch for known-deregistered
 
     return `
       <article class="result-card${a.retired ? ' is-retired' : (a.inactive ? ' is-inactive' : '')}" data-reg="${escapeHtml(a.reg)}">
@@ -162,10 +263,12 @@
           ${allianceTag(a.alliance)}
           ${statusTag(a)}
         </div>
+        ${showPhoto ? '<div class="photo-slot"></div>' : ''}
         <div class="line"><span class="label">机型</span><span class="val b">${typeLine}</span></div>
-        <div class="line"><span class="label">航司</span><span class="val b">${opLine}</span></div>
+        <div class="line"><span class="label">航司</span><span class="val b">${opLink}</span></div>
         ${renderCabin(a.cabin)}
         ${built}${inSvc}${retired}${serial}${icao24}
+        ${renderLinks(a)}
       </article>`;
   }
 
@@ -179,6 +282,33 @@
       : '';
     const cards = list.slice(0, 80).map(renderCard).join('');
     resultBox.innerHTML = head + cards;
+    // After paint, lazy-load photos for the cards that are (or will be) visible.
+    requestAnimationFrame(() => attachVisiblePhotos());
+  }
+
+  /* IntersectionObserver-based lazy photo loader. We don't fire all 80 photo
+   * requests up-front — that would hammer the API and the user's bandwidth. */
+  let photoObserver = null;
+  function ensurePhotoObserver() {
+    if (photoObserver || !('IntersectionObserver' in window)) return;
+    photoObserver = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const card = e.target;
+        photoObserver.unobserve(card);
+        attachPhoto(card, card.dataset.reg);
+      }
+    }, { rootMargin: '200px 0px' });
+  }
+  function attachVisiblePhotos() {
+    ensurePhotoObserver();
+    const cards = resultBox.querySelectorAll('.result-card .photo-slot');
+    if (!photoObserver) {
+      // No IO — just load everything (fallback for old browsers).
+      cards.forEach((slot) => attachPhoto(slot.closest('.result-card'), slot.closest('.result-card').dataset.reg));
+      return;
+    }
+    cards.forEach((slot) => photoObserver.observe(slot.closest('.result-card')));
   }
 
   /* ---------------- main search ---------------- */
@@ -308,6 +438,14 @@
     const chip = e.target.closest('.chip');
     if (chip) {
       qInput.value = chip.dataset.q;
+      doSearch();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    const opLink = e.target.closest('.op-link[data-op-search]');
+    if (opLink) {
+      e.preventDefault();
+      qInput.value = opLink.dataset.opSearch;
       doSearch();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
