@@ -339,6 +339,15 @@ main { max-width: 720px; margin: 0 auto; padding: 12px; }
 .cabin .notes  { color: var(--fg-soft); font-size: 12px; margin-top: 4px; }
 .cabin .src    { float: right; font-size: 11px; color: var(--fg-mute); }
 .cabin .src.fallback { color: #b06a00; }
+.cabin .cabin-fix {
+  float: right;
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--fg-mute);
+  text-decoration: none;
+  opacity: 0.65;
+}
+.cabin .cabin-fix:hover { color: var(--accent-2); opacity: 1; text-decoration: underline; }
 
 /* ----- Cabin proportional bar ----- */
 .cabin-bar {

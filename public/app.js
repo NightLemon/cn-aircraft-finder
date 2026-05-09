@@ -126,7 +126,7 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  function renderCabin(c) {
+  function renderCabin(c, opIcao, typecode) {
     if (!c || !c.layout) return '';
     const total = c.total ? `<span class="total">共 ${c.total} 座</span>` : '';
     const src   = c.source === 'curated'
@@ -134,9 +134,20 @@
       : `<span class="src fallback" title="该航司无具体数据，使用机型通用布局">通用布局</span>`;
     const notes = c.notes ? `<div class="notes">${escapeHtml(c.notes)}</div>` : '';
     const svg = renderCabinSvg(c.layout, c.total);
+    // "Report correction" link — opens a GitHub Issue with prefilled context.
+    let report = '';
+    if (opIcao && typecode) {
+      const title = `客舱布局修正：${opIcao} ${typecode}`;
+      const body = `**当前显示**：${c.layout}（${c.source === 'curated' ? '航司典型' : '通用布局'}）\n` +
+                   `**正确配置**：（请填写，例如 8C + 156Y）\n` +
+                   `**来源**：（航司官网链接 / 座位图 / 其他）\n\n` +
+                   `<sub>键: \`${opIcao}:${typecode}\` · 自动生成于 ${location.href}</sub>`;
+      const url = `https://github.com/NightLemon/cn-aircraft-finder/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}&labels=cabin-correction`;
+      report = `<a class="cabin-fix" href="${url}" target="_blank" rel="noopener" title="发现错误？提交修正到 GitHub">报错 ✏️</a>`;
+    }
     return `
       <div class="cabin">
-        ${src}
+        ${src}${report}
         <span class="layout">${escapeHtml(c.layout)}</span>
         ${total ? '&nbsp;·&nbsp;' + total : ''}
         ${notes}
@@ -346,7 +357,7 @@
         const c = Object.assign({}, cab, {
           source: (LAYOUTS.by_operator_type && LAYOUTS.by_operator_type[key]) ? 'curated' : 'fallback',
         });
-        const cabinHtml = renderCabin(c);
+        const cabinHtml = renderCabin(c, op.icao, me.type);
         if (cabinHtml) {
           card.querySelector('.row-op').insertAdjacentHTML('afterend', cabinHtml);
         }
@@ -373,7 +384,7 @@
     // the airline (e.g. the Capital Airlines A20N row that has empty operator
     // in OpenSky). The operator may be filled in later by the photo callback —
     // we'll re-attach the cabin then if needed.
-    const cabinHtml = hasOp ? renderCabin(a.cabin) : '';
+    const cabinHtml = hasOp ? renderCabin(a.cabin, a.operator_icao, a.type) : '';
 
     return `
       <article class="result-card${a.retired ? ' is-retired' : (a.inactive ? ' is-inactive' : '')}" data-reg="${escapeHtml(a.reg)}">

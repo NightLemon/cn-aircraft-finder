@@ -83,6 +83,10 @@ cd public && python -m http.server 8000
 - 新客舱：编辑 [`data/cabin_layouts.json`](data/cabin_layouts.json) 的 `by_operator_type`，键格式 `<航司ICAO>:<typecode>`，例如 `DAL:A359`。
 - 改完跑一次 `python scripts/build_data.py` 重建即可。
 
+### 客舱布局错了？
+
+每张卡片的客舱条右上角有一个 **报错 ✏️** 链接，点了会跳到 GitHub Issue 模板（带键和当前布局），把正确配置和来源（航司官网链接 / SeatMaestro / AeroLOPA 截图）填进去就行。
+
 ## 项目结构
 
 ```
