@@ -234,19 +234,25 @@ main { max-width: 720px; margin: 0 auto; padding: 12px; }
 /* ===== Alliance badge ===== */
 .alliance-tag {
   font-size: 11px;
-  padding: 2px 8px;
+  padding: 2px 9px;
   border-radius: 4px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
   border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
-.alliance-tag.star      { background: #fff7e0; color: #8c6500; border-color: #f0d678; }
-.alliance-tag.skyteam   { background: #e6f0ff; color: #1a3e8c; border-color: #9bb6e6; }
-.alliance-tag.oneworld  { background: #fde6ee; color: #a81a4d; border-color: #f0a3bc; }
+.alliance-tag.star::before     { content: '★'; }
+.alliance-tag.skyteam::before  { content: '✈'; }
+.alliance-tag.oneworld::before { content: '◐'; }
+.alliance-tag.star      { background: #ffe88a; color: #6e4f00; border-color: #d9b338; }
+.alliance-tag.skyteam   { background: #cfe0ff; color: #142d6e; border-color: #6e8fd4; }
+.alliance-tag.oneworld  { background: #ffc8d9; color: #7a1238; border-color: #d96088; }
 @media (prefers-color-scheme: dark) {
-  .alliance-tag.star      { background: rgba(220,170,30,0.18); color: #ffe089; border-color: rgba(220,170,30,0.5); }
-  .alliance-tag.skyteam   { background: rgba(70,120,220,0.20); color: #a8c5ff; border-color: rgba(120,160,220,0.45); }
-  .alliance-tag.oneworld  { background: rgba(220,60,120,0.18); color: #ff9bba; border-color: rgba(220,80,140,0.45); }
+  .alliance-tag.star      { background: rgba(220,170,30,0.32); color: #ffe089; border-color: rgba(220,170,30,0.7); }
+  .alliance-tag.skyteam   { background: rgba(70,120,220,0.32); color: #a8c5ff; border-color: rgba(120,160,220,0.65); }
+  .alliance-tag.oneworld  { background: rgba(220,60,120,0.28); color: #ff9bba; border-color: rgba(220,80,140,0.65); }
 }
 
 /* ===== Service status badge ===== */
@@ -554,6 +560,174 @@ main { max-width: 720px; margin: 0 auto; padding: 12px; }
   main { padding: 18px; }
   .reg { font-size: 26px; }
 }
+
+/* Desktop two-column result grid. Keeps search card full-width but lays out
+ * cards side-by-side once there's room. */
+@media (min-width: 1000px) {
+  main { max-width: 1080px; }
+  .result-box {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+  .result-box > .hint { grid-column: 1 / -1; }
+}
+
+/* Age badge */
+.age-badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  margin-left: 6px;
+  vertical-align: 1px;
+  background: var(--accent-soft);
+  color: var(--fg-soft);
+}
+.age-badge.age-new { background: #e6f3ec; color: #1f6a45; }
+.age-badge.age-mid { background: #fff3da; color: #8a6112; }
+.age-badge.age-old { background: #fde2e2; color: #8a3a3a; }
+@media (prefers-color-scheme: dark) {
+  .age-badge.age-new { background: #173d2c; color: #6ed09c; }
+  .age-badge.age-mid { background: #3e3015; color: #e8c46a; }
+  .age-badge.age-old { background: #3e1f1f; color: #ff8a87; }
+}
+.next-reg { font-family: var(--mono); }
+
+/* Airline logo (tiny, on the operator row) */
+.op-logo {
+  height: 18px;
+  width: auto;
+  vertical-align: -3px;
+  margin-right: 6px;
+  border-radius: 2px;
+  background: var(--bg);
+  padding: 1px 2px;
+  border: 1px solid var(--border);
+}
+
+/* Mini "open dashboard" buttons */
+.mini-btn {
+  font-size: 11px;
+  padding: 2px 7px;
+  margin-left: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-family: inherit;
+}
+.mini-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
+
+/* B-registration block hint */
+.b-hint { color: var(--fg-mute); font-style: italic; }
+
+/* "Same operator + type" link at the bottom of each card */
+.same-type-link {
+  margin-top: 8px;
+  font-size: 13px;
+  text-align: right;
+}
+.same-type-link a { color: var(--accent); }
+
+/* ===== Detail dialog (fleet dashboard / type encyclopedia) ===== */
+.detail-dialog {
+  max-width: 640px;
+  width: calc(100% - 24px);
+}
+.detail-dialog h2 { margin: 0 0 4px; font-size: 20px; }
+.detail-dialog h3 { margin: 16px 0 6px; font-size: 13px; color: var(--fg-soft); text-transform: uppercase; letter-spacing: 0.5px; }
+.detail-close, .photo-close {
+  position: absolute;
+  top: 8px; right: 10px;
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  color: var(--fg-mute);
+  cursor: pointer;
+  padding: 0 6px;
+}
+.detail-close:hover, .photo-close:hover { color: var(--fg); }
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin: 10px 0 4px;
+}
+.stat {
+  background: var(--accent-soft);
+  border-radius: 6px;
+  padding: 8px 4px;
+  text-align: center;
+}
+.stat-n { font-size: 18px; font-weight: 700; color: var(--accent); }
+.stat-l { font-size: 11px; color: var(--fg-soft); margin-top: 2px; }
+
+.bars { display: flex; flex-direction: column; gap: 4px; }
+.bar-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 38%) 1fr 40px;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+.bar-label { text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track {
+  height: 14px;
+  background: var(--bg);
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #2575d6);
+  transition: width 0.3s;
+}
+.bar-fill.age    { background: linear-gradient(90deg, #1f8a55, #e8c46a, #d72d2a); }
+.bar-fill.region { background: linear-gradient(90deg, #6fa0ff, #1957b8); }
+.bar-count { font-family: var(--mono); font-size: 12px; color: var(--fg-soft); }
+
+/* ===== Photo dialog (full-screen image viewer) ===== */
+.photo-dialog {
+  max-width: 95vw;
+  max-height: 95vh;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+.photo-dialog::backdrop { background: rgba(0,0,0,0.85); }
+.photo-dialog img {
+  display: block;
+  max-width: 100%;
+  max-height: 90vh;
+  height: auto;
+  border-radius: 6px;
+}
+.photo-dialog .photo-close {
+  top: -4px; right: -4px;
+  color: #fff;
+  background: rgba(0,0,0,0.55);
+  border-radius: 50%;
+  width: 32px; height: 32px;
+  line-height: 28px;
+  text-align: center;
+  padding: 0;
+}
+.photo-meta {
+  text-align: center;
+  color: #fff;
+  font-size: 12px;
+  padding: 8px 4px;
+}
+.photo-meta a { color: #cfe0ff; }
+.photo-slot img { cursor: zoom-in; }
+
+.recent-chip { background: var(--bg); }
 
 /* hide spinner-style number controls in iOS */
 input[type="search"]::-webkit-search-decoration,
