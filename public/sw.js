@@ -11,7 +11,7 @@
  * Bump SHELL_VERSION to force a refresh of cached assets.
  */
 
-const SHELL_VERSION = 'shell-v3';
+const SHELL_VERSION = 'shell-v4';
 const DATA_CACHE   = 'data-v1';
 const SHELL = [
   './',
