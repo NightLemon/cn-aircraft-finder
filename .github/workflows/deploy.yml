@@ -28,12 +28,15 @@ jobs:
           python-version: "3.12"
 
       - name: Install build deps
+        if: github.event_name != 'push'
         run: pip install pypinyin
 
       - name: Fetch latest OpenSky aircraft database
+        if: github.event_name != 'push'
         run: python scripts/fetch_opensky.py
 
       - name: Build aircraft.json
+        if: github.event_name != 'push'
         run: python scripts/build_data.py
 
       - name: Commit refreshed data (scheduled runs)
