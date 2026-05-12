@@ -13,12 +13,41 @@ Strategy:
 Output fields are intentionally compact to keep aircraft.json small.
 """
 from __future__ import annotations
+import calendar
 import csv
 import json
 import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Optional pinyin support — if pypinyin is installed, we precompute a pinyin/initials
+# index for each Chinese operator name so the frontend can match "gh"/"guohang" → 国航.
+try:
+    from pypinyin import lazy_pinyin, Style  # type: ignore
+    HAS_PINYIN = True
+except Exception:
+    HAS_PINYIN = False
+
+
+def to_pinyin(text: str) -> tuple[str, str]:
+    """Return (full_pinyin, initials) for a Chinese string. Empty if pypinyin missing."""
+    if not text or not HAS_PINYIN:
+        return "", ""
+    cached = _PINYIN_CACHE.get(text)
+    if cached is not None:
+        return cached
+    try:
+        full = "".join(lazy_pinyin(text, style=Style.NORMAL))
+        inits = "".join(lazy_pinyin(text, style=Style.FIRST_LETTER))
+        out = (full.lower(), inits.lower())
+    except Exception:
+        out = ("", "")
+    _PINYIN_CACHE[text] = out
+    return out
+
+
+_PINYIN_CACHE: dict[str, tuple[str, str]] = {}
 
 csv.field_size_limit(10 * 1024 * 1024)
 
@@ -66,13 +95,14 @@ def parse_year(s: str) -> int | None:
 
 
 def date_key(s: str) -> str:
-    """Pad a date for ordered comparison. '2017' -> '2017-12-31', '2017-06' -> '2017-06-30'."""
+    """Pad a date for ordered comparison using the real month-end day."""
     if not s:
         return ""
     if len(s) == 4:
         return s + "-12-31"
     if len(s) == 7:
-        return s + "-30"
+        y, mo = int(s[:4]), int(s[5:7])
+        return f"{s}-{calendar.monthrange(y, mo)[1]:02d}"
     return s
 
 
@@ -153,6 +183,7 @@ def main() -> int:
     # the aircraft is likely retired or stored.
     mictronics_icao: set[str] = set()
     mictronics_reg: set[str] = set()
+    mictronics_ok = False
     if MICTRONICS_CSV.exists():
         with MICTRONICS_CSV.open(encoding="utf-8", errors="replace") as f:
             mrd = csv.reader(f, delimiter=";")
@@ -165,7 +196,15 @@ def main() -> int:
                     mictronics_icao.add(icao)
                 if rg:
                     mictronics_reg.add(rg)
-        print(f"[build] Mictronics: {len(mictronics_icao):,} icao24, {len(mictronics_reg):,} regs", file=sys.stderr)
+        # Sanity floor: a healthy Mictronics dump has >100k rows. If the file is
+        # truncated/empty, refuse to use it (otherwise we'd flag everything inactive).
+        mictronics_ok = len(mictronics_icao) > 50_000
+        if mictronics_ok:
+            print(f"[build] Mictronics: {len(mictronics_icao):,} icao24, {len(mictronics_reg):,} regs", file=sys.stderr)
+        else:
+            print(f"[build] WARNING: Mictronics looks truncated ({len(mictronics_icao):,} rows); disabling activity check.", file=sys.stderr)
+            mictronics_icao.clear()
+            mictronics_reg.clear()
     else:
         print("[build] WARNING: Mictronics DB missing; activity check disabled.", file=sys.stderr)
 
@@ -258,7 +297,7 @@ def main() -> int:
             #   3. active            : present in Mictronics, or no signal to suggest otherwise.
             in_mi = (icao24.lower() in mictronics_icao) or (reg in mictronics_reg)
             retired = bool(reg_until and date_key(reg_until) < snapshot_cutoff)
-            inactive = (not retired) and (not in_mi) and bool(mictronics_icao)
+            inactive = (not retired) and (not in_mi) and mictronics_ok
             if retired:
                 counter["retired"] += 1
             elif inactive:
@@ -267,6 +306,14 @@ def main() -> int:
                 counter["active"] += 1
             if in_mi:
                 counter["in_mictronics"] += 1
+
+            operator_zh = op_rec.get("name_zh", "") or operator or owner
+            operator_short_zh = op_rec.get("short_zh", "")
+            py_full, py_init = to_pinyin(operator_zh)
+            if operator_short_zh:
+                spf, spi = to_pinyin(operator_short_zh)
+                py_full = (py_full + " " + spf).strip()
+                py_init = (py_init + " " + spi).strip()
 
             entry = {
                 "reg": reg,
@@ -279,9 +326,11 @@ def main() -> int:
                 "model": model,
                 "operator_icao": op_rec.get("icao", "") or op_icao,
                 "operator_iata": op_rec.get("iata", "") or op_iata,
-                "operator_zh": op_rec.get("name_zh", "") or operator or owner,
-                "operator_short_zh": op_rec.get("short_zh", ""),
+                "operator_zh": operator_zh,
+                "operator_short_zh": operator_short_zh,
                 "operator_en": op_rec.get("name_en", "") or operator or owner,
+                "operator_py": py_full,
+                "operator_py_init": py_init,
                 "region": op_rec.get("region", ""),
                 "alliance": op_rec.get("alliance", ""),
                 "built": built,
@@ -308,8 +357,79 @@ def main() -> int:
 
     aircraft.sort(key=lambda a: a["reg"])
 
+    # Legacy row-format JSON kept for compatibility & for the optional
+    # `?format=row` debug path. The frontend prefers the column-store below.
     OUT_AIRCRAFT.write_text(
         json.dumps(aircraft, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+    # ----- Column-store format -----
+    # Same data, packed as parallel arrays + string dictionaries for the
+    # high-cardinality-but-low-distinct fields (typecode, operator_icao, region, …).
+    # Typical compression: 16MB → ~9-10MB. The frontend rebuilds row dicts on load.
+    DICT_FIELDS = [
+        "type", "category", "operator_icao", "operator_iata",
+        "operator_zh", "operator_short_zh", "operator_en",
+        "type_zh", "type_en", "region", "alliance", "country",
+    ]
+    COPY_FIELDS = [
+        "reg", "icao24", "model", "operator_py", "operator_py_init",
+        "built", "in_service_at", "retired_at", "reg_until",
+        "next_reg", "status", "serial",
+    ]
+    BOOL_FIELDS = ["retired", "inactive"]
+
+    dicts: dict[str, list[str]] = {f: [""] for f in DICT_FIELDS}
+    dict_index: dict[str, dict[str, int]] = {f: {"": 0} for f in DICT_FIELDS}
+    columns: dict[str, list] = {f: [] for f in DICT_FIELDS + COPY_FIELDS}
+    bool_bits: dict[str, list[int]] = {f: [] for f in BOOL_FIELDS}
+    cabin_col: list = []
+    cabin_dict: list[dict] = [{}]
+    cabin_index: dict[str, int] = {"": 0}
+
+    def intern(field: str, value: str) -> int:
+        if value is None:
+            value = ""
+        idx_map = dict_index[field]
+        idx = idx_map.get(value)
+        if idx is None:
+            idx = len(dicts[field])
+            dicts[field].append(value)
+            idx_map[value] = idx
+        return idx
+
+    for a in aircraft:
+        for f in DICT_FIELDS:
+            columns[f].append(intern(f, a.get(f, "")))
+        for f in COPY_FIELDS:
+            columns[f].append(a.get(f, ""))
+        for f in BOOL_FIELDS:
+            bool_bits[f].append(1 if a.get(f) else 0)
+        c = a.get("cabin") or {}
+        if not c:
+            cabin_col.append(0)
+        else:
+            key = json.dumps(c, ensure_ascii=False, sort_keys=True)
+            idx = cabin_index.get(key)
+            if idx is None:
+                idx = len(cabin_dict)
+                cabin_dict.append(c)
+                cabin_index[key] = idx
+            cabin_col.append(idx)
+
+    column_blob = {
+        "version": 1,
+        "n": len(aircraft),
+        "dicts": dicts,
+        "columns": columns,
+        "bools": bool_bits,
+        "cabin_dict": cabin_dict,
+        "cabin": cabin_col,
+    }
+    out_col = OUT_DIR / "aircraft.col.json"
+    out_col.write_text(
+        json.dumps(column_blob, ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8",
     )
 
@@ -321,6 +441,7 @@ def main() -> int:
         "total_aircraft": len(aircraft),
         "by_region": {},
         "by_operator": {},
+        "by_operator_icao": {},
         "by_type": {},
         "by_alliance": {},
         "stats": counter,
@@ -330,11 +451,27 @@ def main() -> int:
         meta["by_region"][r] = meta["by_region"].get(r, 0) + 1
         op = a.get("operator_zh") or "未知"
         meta["by_operator"][op] = meta["by_operator"].get(op, 0) + 1
+        opi = a.get("operator_icao") or ""
+        if opi:
+            meta["by_operator_icao"][opi] = meta["by_operator_icao"].get(opi, 0) + 1
         t = a.get("type") or "未知"
         meta["by_type"][t] = meta["by_type"].get(t, 0) + 1
         al = a.get("alliance") or ""
         if al:
             meta["by_alliance"][al] = meta["by_alliance"].get(al, 0) + 1
+
+    # "What's new this snapshot": aircraft built or retired in the snapshot's
+    # calendar year, surfaced on the about/meta line.
+    snap_year = snapshot_month[:4]
+    built_this_year = sum(1 for a in aircraft if (a.get("built") or "").startswith(snap_year))
+    retired_this_year = sum(
+        1 for a in aircraft if a.get("retired") and (a.get("retired_at") or "").startswith(snap_year)
+    )
+    meta["recent"] = {
+        "year": snap_year,
+        "built_this_year": built_this_year,
+        "retired_this_year": retired_this_year,
+    }
     OUT_META.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # Also publish a slim copy of the cabin-layouts file so the frontend can

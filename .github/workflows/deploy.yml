@@ -27,6 +27,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install build deps
+        run: pip install pypinyin
+
       - name: Fetch latest OpenSky aircraft database
         run: python scripts/fetch_opensky.py
 
@@ -38,7 +41,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/data/aircraft.json public/data/meta.json
+          git add public/data/aircraft.json public/data/aircraft.col.json public/data/meta.json public/data/cabin_layouts.json
           if ! git diff --cached --quiet; then
             git commit -m "data: refresh from $(cat data/raw/source.txt | tr -d '\n')"
             git push
