@@ -69,6 +69,100 @@ GC_REGION_DEFAULT = {
     "China": "mainland", "Hong Kong": "hk", "Macao": "macau", "Taiwan": "tw",
 }
 
+# Tail-number prefix → (country, region). Used by the Mictronics supplementary
+# pass when OpenSky's row is missing entirely. Covers the prefixes we care about
+# — extra entries are harmless, missing entries just mean the supplement skips
+# that airframe (which is fine; better than polluting with random nationalities).
+_REG_TO_COUNTRY_REGION = {
+    "B-K":  ("Hong Kong",   "hk"),
+    "B-L":  ("Hong Kong",   "hk"),
+    "B-H":  ("Hong Kong",   "hk"),
+    "B-M":  ("Macao",       "macau"),
+    "B":    ("China",       "mainland"),     # default for other B-
+    "N":    ("United States", "us"),
+    "C-":   ("Canada",      "ca"),
+    "G-":   ("United Kingdom", "uk"),
+    "EI":   ("Ireland",     "uk"),
+    "F-":   ("France",      "eu"),
+    "D-":   ("Germany",     "eu"),
+    "OE":   ("Austria",     "eu"),
+    "OO":   ("Belgium",     "eu"),
+    "OY":   ("Denmark",     "eu"),
+    "SE":   ("Sweden",      "eu"),
+    "LN":   ("Norway",      "eu"),
+    "OH":   ("Finland",     "eu"),
+    "PH":   ("Netherlands", "eu"),
+    "EC":   ("Spain",       "eu"),
+    "CS":   ("Portugal",    "eu"),
+    "I-":   ("Italy",       "eu"),
+    "HB":   ("Switzerland", "eu"),
+    "SP":   ("Poland",      "eu"),
+    "OK":   ("Czechia",     "eu"),
+    "OM":   ("Slovakia",    "eu"),
+    "TC":   ("Turkey",      "eu"),
+    "SX":   ("Greece",      "eu"),
+    "9H":   ("Malta",       "eu"),
+    "LZ":   ("Bulgaria",    "eu"),
+    "YR":   ("Romania",     "eu"),
+    "HA":   ("Hungary",     "eu"),
+    "S5":   ("Slovenia",    "eu"),
+    "JA":   ("Japan",       "jp"),
+    "HL":   ("South Korea", "kr"),
+    "VT":   ("India",       "in"),
+    "VH":   ("Australia",   "oceania"),
+    "ZK":   ("New Zealand", "oceania"),
+    "9V":   ("Singapore",   "sea"),
+    "9M":   ("Malaysia",    "sea"),
+    "HS":   ("Thailand",    "sea"),
+    "PK":   ("Indonesia",   "sea"),
+    "RP":   ("Philippines", "sea"),
+    "VN":   ("Vietnam",     "sea"),
+    "XV":   ("Vietnam",     "sea"),
+    "VR":   ("Vietnam",     "sea"),
+    "A6":   ("UAE",         "me"),
+    "A7":   ("Qatar",       "me"),
+    "A9C":  ("Bahrain",     "me"),
+    "HZ":   ("Saudi Arabia","me"),
+    "4X":   ("Israel",      "me"),
+    "SU":   ("Egypt",       "africa"),
+    "ZS":   ("South Africa","africa"),
+    "5Y":   ("Kenya",       "africa"),
+    "ET":   ("Ethiopia",    "africa"),
+    "RA":   ("Russia",      "ru"),
+    "UR":   ("Ukraine",     "ru"),
+    "EW":   ("Belarus",     "ru"),
+    "UP":   ("Kazakhstan",  "ru"),
+    "PT":   ("Brazil",      "latam"),
+    "PP":   ("Brazil",      "latam"),
+    "PR":   ("Brazil",      "latam"),
+    "PS":   ("Brazil",      "latam"),
+    "LV":   ("Argentina",   "latam"),
+    "CC":   ("Chile",       "latam"),
+    "XA":   ("Mexico",      "latam"),
+    "XB":   ("Mexico",      "latam"),
+    "XC":   ("Mexico",      "latam"),
+    "OB":   ("Peru",        "latam"),
+    "HK":   ("Colombia",    "latam"),
+}
+# Try longest match first.
+_REG_PREFIXES_SORTED = sorted(_REG_TO_COUNTRY_REGION.keys(), key=len, reverse=True)
+# Regions we'll happily backfill from Mictronics even without an airline match.
+# (Greater China is always kept regardless; this list governs everywhere else.)
+_MI_SUPPLEMENT_REGIONS = {"us", "eu", "uk", "jp", "kr", "sea", "in", "me",
+                          "oceania", "ca", "ru", "latam", "africa"}
+
+def _reg_prefix(reg: str) -> str:
+    u = (reg or "").upper()
+    for p in _REG_PREFIXES_SORTED:
+        if u.startswith(p):
+            return p
+    return ""
+
+def _country_from_reg(reg: str) -> str:
+    return _REG_TO_COUNTRY_REGION.get(_reg_prefix(reg), ("", ""))[0]
+
+REG_PREFIX_REGION = {p: rr[1] for p, rr in _REG_TO_COUNTRY_REGION.items()}
+
 # Date in YYYY-MM-DD or YYYY-MM or YYYY. We accept any of these.
 _DATE_RE = re.compile(r"^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?$")
 
@@ -178,12 +272,20 @@ def main() -> int:
     layouts = load_json(LAYOUTS_JSON)
 
     # Mictronics tar1090 DB — weekly-updated registry of aircraft seen on ADS-B.
-    # Used as a "is this aircraft still active" signal: if a record is in OpenSky
-    # (which is more comprehensive but slower-updating) but missing from Mictronics,
-    # the aircraft is likely retired or stored.
+    # Two roles:
+    #   (a) activity signal — if a record is in OpenSky but missing from
+    #       Mictronics, the aircraft is likely retired / stored / sold.
+    #   (b) supplementary supply — OpenSky's monthly snapshot misses tens of
+    #       thousands of currently-flying airframes (especially European F-/D-/G-
+    #       regs). We pull those in too so users searching for, e.g., F-GSPX
+    #       don't see "no result". Operator is left empty when Mictronics
+    #       doesn't know it; the frontend recovers the airline from the
+    #       Planespotters photo slug.
     mictronics_icao: set[str] = set()
     mictronics_reg: set[str] = set()
     mictronics_ok = False
+    # reg -> (icao24, typecode, model, owner, built_year)
+    mictronics_rows: dict[str, tuple[str, str, str, str, str]] = {}
     if MICTRONICS_CSV.exists():
         with MICTRONICS_CSV.open(encoding="utf-8", errors="replace") as f:
             mrd = csv.reader(f, delimiter=";")
@@ -196,6 +298,14 @@ def main() -> int:
                     mictronics_icao.add(icao)
                 if rg:
                     mictronics_reg.add(rg)
+                    if rg not in mictronics_rows:
+                        mictronics_rows[rg] = (
+                            icao,
+                            (row[2] or "").strip() if len(row) > 2 else "",
+                            (row[4] or "").strip() if len(row) > 4 else "",
+                            (row[6] or "").strip() if len(row) > 6 else "",
+                            (row[5] or "").strip() if len(row) > 5 else "",
+                        )
         # Sanity floor: a healthy Mictronics dump has >100k rows. If the file is
         # truncated/empty, refuse to use it (otherwise we'd flag everything inactive).
         mictronics_ok = len(mictronics_icao) > 50_000
@@ -205,6 +315,7 @@ def main() -> int:
             print(f"[build] WARNING: Mictronics looks truncated ({len(mictronics_icao):,} rows); disabling activity check.", file=sys.stderr)
             mictronics_icao.clear()
             mictronics_reg.clear()
+            mictronics_rows.clear()
     else:
         print("[build] WARNING: Mictronics DB missing; activity check disabled.", file=sys.stderr)
 
@@ -354,6 +465,114 @@ def main() -> int:
                 if v not in ("", {}, None):
                     cleaned[k] = v
             aircraft.append(cleaned)
+
+    # ---------- Mictronics supplementary pass ----------
+    # Pull in airframes Mictronics knows about but OpenSky's monthly snapshot
+    # missed (~83k as of 2025-08). Without this, currently-flying jets like
+    # Air France's F-GSPX would simply not appear.
+    #
+    # Filter strategy:
+    #   1. Always keep if owner matches our airline whitelist.
+    #   2. Always keep if the registration is Greater China.
+    #   3. Otherwise keep only if the typecode resolves to a commercial
+    #      category (widebody/narrowbody/regional/freighter) AND the reg
+    #      prefix maps to a region we cover. Operator may be left empty —
+    #      the frontend recovers it from the Planespotters photo slug.
+    #
+    # This intentionally lets in tens of thousands of airframes whose
+    # operator we don't know yet, but excludes the half-million private
+    # GA/heli/biz tails that pollute the dataset.
+    _COMMERCIAL_CATS = {"widebody", "narrowbody", "regional", "freighter"}
+    if mictronics_ok:
+        mi_added = 0
+        for reg, (icao24, typecode, model, owner, built_year) in mictronics_rows.items():
+            if reg in seen_regs:
+                continue
+            country = _country_from_reg(reg)
+            region_from_prefix = REG_PREFIX_REGION.get(_reg_prefix(reg), "")
+            op_rec, matched = resolve_operator("", owner, "", "", ops)
+            in_gc = country in GREATER_CHINA
+            type_rec_tmp = resolve_type(typecode, model, "", types) if typecode else None
+            is_commercial = (type_rec_tmp and type_rec_tmp.get("category") in _COMMERCIAL_CATS)
+
+            # Filter
+            if matched:
+                pass  # always keep
+            elif in_gc:
+                if not (typecode or model or owner): continue
+            elif is_commercial and region_from_prefix in _MI_SUPPLEMENT_REGIONS:
+                pass  # commercial widebody/narrowbody from a covered region
+            else:
+                continue
+
+            seen_regs.add(reg)
+            mi_added += 1
+
+            type_rec = type_rec_tmp or resolve_type(typecode, model, "", types)
+            if op_rec is None:
+                op_rec = {
+                    "icao": "", "iata": "",
+                    "name_zh": owner or "",
+                    "short_zh": "",
+                    "name_en": owner or "",
+                    "region": GC_REGION_DEFAULT.get(country, region_from_prefix) or region_from_prefix,
+                }
+            cabin = resolve_cabin(op_rec.get("icao", ""), typecode, layouts)
+            built = built_year if built_year and len(built_year) == 4 else ""
+
+            operator_zh = op_rec.get("name_zh", "") or owner or ""
+            operator_short_zh = op_rec.get("short_zh", "")
+            py_full, py_init = to_pinyin(operator_zh)
+            if operator_short_zh:
+                spf, spi = to_pinyin(operator_short_zh)
+                py_full = (py_full + " " + spf).strip()
+                py_init = (py_init + " " + spi).strip()
+
+            entry = {
+                "reg": reg,
+                "icao24": icao24,
+                "country": country,
+                "type": typecode,
+                "type_zh": type_rec["name_zh"],
+                "type_en": type_rec["name_en"],
+                "category": type_rec.get("category", "other"),
+                "model": model,
+                "operator_icao": op_rec.get("icao", ""),
+                "operator_iata": op_rec.get("iata", ""),
+                "operator_zh": operator_zh,
+                "operator_short_zh": operator_short_zh,
+                "operator_en": op_rec.get("name_en", "") or owner or "",
+                "operator_py": py_full,
+                "operator_py_init": py_init,
+                "region": op_rec.get("region", "") or region_from_prefix,
+                "alliance": op_rec.get("alliance", ""),
+                "built": built,
+                "in_service_at": "",
+                "retired_at": "",
+                "reg_until": "",
+                "next_reg": "",
+                "retired": False,
+                "inactive": False,
+                "status": "",
+                "serial": "",
+                "cabin": cabin,
+            }
+            cleaned = {}
+            for k, v in entry.items():
+                if k in ("retired", "inactive"):
+                    if v: cleaned[k] = True
+                    continue
+                if v not in ("", {}, None):
+                    cleaned[k] = v
+            aircraft.append(cleaned)
+            counter["active"] += 1
+            counter["in_mictronics"] += 1
+            if matched:
+                counter["matched"] += 1
+            else:
+                counter["gc_unmatched"] += 1
+            counter["kept"] += 1
+        print(f"[build] Mictronics supplement: +{mi_added:,} airframes", file=sys.stderr)
 
     aircraft.sort(key=lambda a: a["reg"])
 
