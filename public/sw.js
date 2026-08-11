@@ -2,16 +2,18 @@
  *
  * Strategy:
  *   - Precache the shell (HTML/CSS/JS + manifest) on install.
+ *   - Network-first for the shell so deployed UI fixes reach existing users,
+ *     with the precache as an offline fallback.
  *   - Stale-while-revalidate for data JSON: serve cached copy immediately, fetch
  *     the latest in the background. This makes repeat visits instant and works
  *     completely offline once you've loaded the site once.
  *   - Network-only for the Planespotters photo API (no point caching, and we
  *     don't want their TOS surprises).
  *
- * Bump SHELL_VERSION to force a refresh of cached assets.
+ * Bump SHELL_VERSION when the shell cache structure changes.
  */
 
-const SHELL_VERSION = 'shell-v4';
+const SHELL_VERSION = 'shell-v5';
 const DATA_CACHE   = 'data-v1';
 const SHELL = [
   './',
@@ -61,16 +63,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Same-origin shell → cache-first.
+  // Same-origin shell → network-first with an offline fallback.
   if (url.origin === location.origin) {
     event.respondWith(
-      caches.match(req).then((cached) => cached || fetch(req).then((res) => {
+      fetch(req).then((res) => {
         if (res && res.ok) {
           const copy = res.clone();
           caches.open(SHELL_VERSION).then((c) => c.put(req, copy));
         }
         return res;
-      }))
+      }).catch(() => caches.match(req))
     );
   }
 });

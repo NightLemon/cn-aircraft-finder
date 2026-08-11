@@ -312,12 +312,12 @@ def main() -> int:
         if mictronics_ok:
             print(f"[build] Mictronics: {len(mictronics_icao):,} icao24, {len(mictronics_reg):,} regs", file=sys.stderr)
         else:
-            print(f"[build] WARNING: Mictronics looks truncated ({len(mictronics_icao):,} rows); disabling activity check.", file=sys.stderr)
-            mictronics_icao.clear()
-            mictronics_reg.clear()
-            mictronics_rows.clear()
+            raise SystemExit(
+                f"Mictronics looks truncated ({len(mictronics_icao):,} rows); "
+                "refusing to publish degraded activity data."
+            )
     else:
-        print("[build] WARNING: Mictronics DB missing; activity check disabled.", file=sys.stderr)
+        raise SystemExit("Mictronics DB missing; refusing to publish degraded activity data.")
 
     aircraft: list[dict] = []
     seen_regs: set[str] = set()

@@ -1,6 +1,6 @@
 # 项目状态
 
-> 最后更新：2026-05-11 · 数据快照：2025-08
+> 最后更新：2026-08-11 · OpenSky 最新可用数据快照：2025-08
 
 本文档记录 cn-aircraft-finder 的当前实现、能力边界与改进方向。`README.md` 面向使用者，本文件面向维护者与贡献者。
 
@@ -20,7 +20,7 @@
 
 ### 数据源
 
-- **OpenSky Network** 月度公开飞机数据库 —— 主源
+- **OpenSky Network** 最新可用公开飞机快照 —— 主源（当前上游最新为 2025-08）
 - **Mictronics tar1090-db** 每周更新的 ADS-B 飞机数据库 —— 活跃判定第二源
 - **Planespotters Photo API** —— 飞机照片（含署名）
 - **手工维护** 航司 / 机型 / 客舱布局映射
@@ -63,7 +63,7 @@ Mictronics 周度 CSV (~33 MB) ─┤                              └─> publi
 
 | 决定 | 理由 |
 | --- | --- |
-| 纯静态托管 | 35k 条数据在浏览器里跑得动；GH Pages 免费；零运维 |
+| 纯静态托管 | 约 55k 条列存数据在浏览器里跑得动；GH Pages 免费；零运维 |
 | 选 OpenSky 作主源 | 完全免费、全球覆盖、含 `regUntil` 等历史字段、无 API key |
 | 引入 Mictronics 作活跃信号源 | 每周更新，是判定退役的中等置信信号 |
 | 不存任何用户数据 | 全部前端，零合规负担 |
@@ -76,7 +76,7 @@ Mictronics 周度 CSV (~33 MB) ─┤                              └─> publi
 
 | 问题 | 影响范围 | 现状 |
 | --- | --- | --- |
-| 上游数据按月更新，新机入库有滞后 | 全球 | GH Actions 每月自动刷新 |
+| OpenSky 快照发布不规律，当前最新仍为 2025-08 | 全球 | GH Actions 每月检查最新快照，并用最新 Mictronics 数据补充活跃机队 |
 | 客舱布局以 (航司, 机型) 为粒度，但同一对常有多种实际配置 | 全球 | 已在 `notes` 字段写明；用户可通过"报错"按钮反馈 |
 | 部分注册号 operator 字段缺失 | 全球 | 前端通过照片 slug 兜底推断 |
 | 已退役但 `regUntil` 仍在未来的飞机暂无法标退役 | 全球 | Mictronics "久未活跃"判定可覆盖大部分 |
@@ -90,9 +90,9 @@ Mictronics 周度 CSV (~33 MB) ─┤                              └─> publi
 
 ### 前端
 
-- 首次加载约 13 MB JSON，gzip 后 ~700 KB
+- 优先加载约 7.0 MiB 的列存 JSON（gzip 后约 0.85 MiB）；22.2 MiB 行存 JSON 仅作兼容回退
 - 搜索结果最多显示 80 条
-- 暂无键盘快捷键 / 拼音搜索 / 历史记录
+- 已支持 `/` 聚焦、`Esc` 清空、航司拼音搜索和最近 10 条查询
 
 ---
 
@@ -125,13 +125,6 @@ Mictronics 周度 CSV (~33 MB) ─┤                              └─> publi
 - [ ] **多语言**：加英文 UI
 - [ ] **退役历史时间线**：基于历史快照差分
 
-### 中期
-
-- [ ] **航司机队仪表板**：每家航司的机型分布、平均机龄
-- [ ] **机型百科**：点 `A20N` 跳到 `/type/A20N`，列出该机型全球分布、首飞日
-- [ ] **多语言**：加英文 UI
-- [ ] **退役历史时间线**：基于历史快照差分
-
 ### 不打算做
 
 - ❌ **每架飞机的实际座位图**：现实不可行（数据闭源 + 频繁变化）
@@ -145,18 +138,20 @@ Mictronics 周度 CSV (~33 MB) ─┤                              └─> publi
 - **每月**：GH Actions 自动跑数据刷新
 - **按需**：用户 Issue 报错 → 改一行 → push → 一分钟生效
 - **季度**：人工审一遍文档与数据规模
+- **长期无提交时**：GitHub 会在公开仓库 60 天无活动后停用定时工作流；收到提醒后在 Actions 中重新启用 `Build and Deploy`
 
 ## 6. 仓库统计
 
 | 文件 | 大小 | 说明 |
 | --- | --- | --- |
-| `public/app.js` | ~620 行 | 全部前端逻辑 |
-| `public/style.css` | ~480 行 | 全部样式 |
-| `public/index.html` | ~120 行 | 主页结构 |
-| `public/data/aircraft.json` | ~13.8 MB | 构建产物 |
+| `public/app.js` | ~1,035 行 | 全部前端逻辑 |
+| `public/style.css` | ~734 行 | 全部样式 |
+| `public/index.html` | ~163 行 | 主页结构 |
+| `public/data/aircraft.col.json` | ~7.0 MiB | 前端优先加载的列存构建产物 |
+| `public/data/aircraft.json` | ~22.2 MiB | 兼容回退的行存构建产物 |
 | `data/operators.json` | 28 KB | 航司白名单 |
-| `data/aircraft_types.json` | 16 KB | 机型字典（137 条） |
-| `data/cabin_layouts.json` | 22 KB | 客舱布局（576 条） |
-| `scripts/build_data.py` | ~340 行 | 主构建脚本 |
-| `scripts/fetch_opensky.py` | ~70 行 | 数据下载脚本 |
-| `.github/workflows/deploy.yml` | ~55 行 | CI/CD |
+| `data/aircraft_types.json` | 16 KB | 机型字典（138 条） |
+| `data/cabin_layouts.json` | 22 KB | 客舱布局（578 条） |
+| `scripts/build_data.py` | ~716 行 | 主构建脚本 |
+| `scripts/fetch_opensky.py` | ~112 行 | 带重试和原子替换的数据下载脚本 |
+| `.github/workflows/deploy.yml` | ~70 行 | CI/CD |
