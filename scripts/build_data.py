@@ -13,6 +13,7 @@ Strategy:
 Output fields are intentionally compact to keep aircraft.json small.
 """
 from __future__ import annotations
+import argparse
 import calendar
 import csv
 import json
@@ -20,6 +21,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 # Optional pinyin support — if pypinyin is installed, we precompute a pinyin/initials
 # index for each Chinese operator name so the frontend can match "gh"/"guohang" → 国航.
@@ -576,12 +578,71 @@ def main() -> int:
 
     aircraft.sort(key=lambda a: a["reg"])
 
+    write_aircraft(aircraft)
+
+    source = SOURCE_TXT.read_text(encoding="utf-8").strip() if SOURCE_TXT.exists() else ""
+    meta = {
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "source_csv": source,
+        "snapshot_month": snapshot_month,
+        "total_aircraft": len(aircraft),
+        "by_region": {},
+        "by_operator": {},
+        "by_operator_icao": {},
+        "by_type": {},
+        "by_alliance": {},
+        "stats": counter,
+    }
+    for a in aircraft:
+        r = a.get("region", "other")
+        meta["by_region"][r] = meta["by_region"].get(r, 0) + 1
+        op = a.get("operator_zh") or "未知"
+        meta["by_operator"][op] = meta["by_operator"].get(op, 0) + 1
+        opi = a.get("operator_icao") or ""
+        if opi:
+            meta["by_operator_icao"][opi] = meta["by_operator_icao"].get(opi, 0) + 1
+        t = a.get("type") or "未知"
+        meta["by_type"][t] = meta["by_type"].get(t, 0) + 1
+        al = a.get("alliance") or ""
+        if al:
+            meta["by_alliance"][al] = meta["by_alliance"].get(al, 0) + 1
+
+    # "What's new this snapshot": aircraft built or retired in the snapshot's
+    # calendar year, surfaced on the about/meta line.
+    snap_year = snapshot_month[:4]
+    built_this_year = sum(1 for a in aircraft if (a.get("built") or "").startswith(snap_year))
+    retired_this_year = sum(
+        1 for a in aircraft if a.get("retired") and (a.get("retired_at") or "").startswith(snap_year)
+    )
+    meta["recent"] = {
+        "year": snap_year,
+        "built_this_year": built_this_year,
+        "retired_this_year": retired_this_year,
+    }
+    OUT_META.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    publish_cabin_layouts(layouts)
+
+    print(f"[build] processed {counter['total']:,} rows", file=sys.stderr)
+    print(f"[build] kept {counter['kept']:,} aircraft "
+          f"(matched={counter['matched']:,}, gc_unmatched={counter['gc_unmatched']:,})", file=sys.stderr)
+    print(f"[build] → {OUT_AIRCRAFT}  ({OUT_AIRCRAFT.stat().st_size/1024:.1f} KiB)", file=sys.stderr)
+    return 0
+
+
+def write_compact_json(path: Path, data) -> None:
+    # A cabin-only refresh reads the row file again on the next run.
+    # Keep its previous complete copy available until the new one is ready.
+    with TemporaryDirectory(dir=path.parent) as staging:
+        staged = Path(staging) / path.name
+        staged.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        staged.replace(path)
+
+
+def write_aircraft(aircraft: list[dict]) -> None:
     # Legacy row-format JSON kept for compatibility & for the optional
     # `?format=row` debug path. The frontend prefers the column-store below.
-    OUT_AIRCRAFT.write_text(
-        json.dumps(aircraft, ensure_ascii=False, separators=(",", ":")),
-        encoding="utf-8",
-    )
+    write_compact_json(OUT_AIRCRAFT, aircraft)
 
     # ----- Column-store format -----
     # Same data, packed as parallel arrays + string dictionaries for the
@@ -646,71 +707,41 @@ def main() -> int:
         "cabin_dict": cabin_dict,
         "cabin": cabin_col,
     }
-    out_col = OUT_DIR / "aircraft.col.json"
-    out_col.write_text(
-        json.dumps(column_blob, ensure_ascii=False, separators=(",", ":")),
-        encoding="utf-8",
-    )
+    write_compact_json(OUT_DIR / "aircraft.col.json", column_blob)
 
-    source = SOURCE_TXT.read_text(encoding="utf-8").strip() if SOURCE_TXT.exists() else ""
-    meta = {
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "source_csv": source,
-        "snapshot_month": snapshot_month,
-        "total_aircraft": len(aircraft),
-        "by_region": {},
-        "by_operator": {},
-        "by_operator_icao": {},
-        "by_type": {},
-        "by_alliance": {},
-        "stats": counter,
-    }
-    for a in aircraft:
-        r = a.get("region", "other")
-        meta["by_region"][r] = meta["by_region"].get(r, 0) + 1
-        op = a.get("operator_zh") or "未知"
-        meta["by_operator"][op] = meta["by_operator"].get(op, 0) + 1
-        opi = a.get("operator_icao") or ""
-        if opi:
-            meta["by_operator_icao"][opi] = meta["by_operator_icao"].get(opi, 0) + 1
-        t = a.get("type") or "未知"
-        meta["by_type"][t] = meta["by_type"].get(t, 0) + 1
-        al = a.get("alliance") or ""
-        if al:
-            meta["by_alliance"][al] = meta["by_alliance"].get(al, 0) + 1
 
-    # "What's new this snapshot": aircraft built or retired in the snapshot's
-    # calendar year, surfaced on the about/meta line.
-    snap_year = snapshot_month[:4]
-    built_this_year = sum(1 for a in aircraft if (a.get("built") or "").startswith(snap_year))
-    retired_this_year = sum(
-        1 for a in aircraft if a.get("retired") and (a.get("retired_at") or "").startswith(snap_year)
-    )
-    meta["recent"] = {
-        "year": snap_year,
-        "built_this_year": built_this_year,
-        "retired_this_year": retired_this_year,
-    }
-    OUT_META.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-
+def publish_cabin_layouts(layouts: dict) -> None:
     # Also publish a slim copy of the cabin-layouts file so the frontend can
     # back-fill cabin info after recovering an operator from a photo. Comments
     # (`_*` keys) are dropped to keep payload small.
-    out_layouts = ROOT / "public" / "data" / "cabin_layouts.json"
+    out_layouts = OUT_DIR / "cabin_layouts.json"
     slim = {
         "by_operator_type": {k: v for k, v in layouts.get("by_operator_type", {}).items()
                              if isinstance(v, dict) and v.get("layout")},
         "fallback_by_type": {k: v for k, v in layouts.get("fallback_by_type", {}).items()
                              if isinstance(v, dict) and v.get("layout")},
     }
-    out_layouts.write_text(json.dumps(slim, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    write_compact_json(out_layouts, slim)
 
-    print(f"[build] processed {counter['total']:,} rows", file=sys.stderr)
-    print(f"[build] kept {counter['kept']:,} aircraft "
-          f"(matched={counter['matched']:,}, gc_unmatched={counter['gc_unmatched']:,})", file=sys.stderr)
-    print(f"[build] → {OUT_AIRCRAFT}  ({OUT_AIRCRAFT.stat().st_size/1024:.1f} KiB)", file=sys.stderr)
+
+def refresh_cabins() -> int:
+    """Rebuild the cabin fields of the published snapshot without refreshing its aircraft."""
+    aircraft = json.loads(OUT_AIRCRAFT.read_text(encoding="utf-8"))
+    layouts = load_json(LAYOUTS_JSON)
+    for row in aircraft:
+        cabin = resolve_cabin(row.get("operator_icao", ""), row.get("type", ""), layouts)
+        if cabin:
+            row["cabin"] = cabin
+        else:
+            row.pop("cabin", None)
+    write_aircraft(aircraft)
+    publish_cabin_layouts(layouts)
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--cabins-only", action="store_true",
+                        help="refresh cabin layouts in the existing public/data snapshot")
+    args = parser.parse_args()
+    raise SystemExit(refresh_cabins() if args.cabins_only else main())

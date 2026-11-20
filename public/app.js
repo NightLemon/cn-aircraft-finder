@@ -157,7 +157,7 @@
   }
 
   /* Build a stylised cabin diagram from a layout string like "8C + 156Y" or
-   * "10F + 42C + 30W + 262Y". Not a real seat map — it's a proportional bar
+   * "10F + 42C + 292Y". Not a real seat map — it's a proportional bar
    * showing the share of each cabin class plus a count. Shape is a flat ribbon
    * which avoids the false precision of drawing fake seats. */
   const CABIN_CLASS = {
@@ -167,19 +167,14 @@
     Y: { label: '经济', color: '#1f8a55' },
   };
   function parseLayout(s) {
-    if (!s) return null;
-    // Tolerate things like "纯货机" that aren't really layouts.
-    if (!/[FCWY]/.test(s)) return null;
-    const m = s.match(/(\d+)\s*([FCWY])/g) || [];
-    const parts = m.map((tok) => {
-      const mm = tok.match(/(\d+)\s*([FCWY])/);
-      return { n: parseInt(mm[1], 10), cls: mm[2] };
-    });
+    // Only count seat groups. A model name in prose, such as "777F", is not a seat count.
+    const parts = Array.from((s || '').matchAll(/(?:^|\+)\s*(\d+)\s*([FCWY])\b/g),
+      ([, count, cls]) => ({ n: Number(count), cls }));
     return parts.length ? parts : null;
   }
   function renderCabinSvg(layoutStr, totalSeats) {
     const parts = parseLayout(layoutStr);
-    if (!parts) return '';
+    if (!parts || parts.reduce((sum, part) => sum + part.n, 0) !== totalSeats) return '';
     // Use a flex div instead of SVG: easier to overflow-hide text on narrow segments.
     const segs = parts.map((p) =>
       `<div class="cb-seg" style="flex:${p.n};background:${CABIN_CLASS[p.cls].color}" title="${CABIN_CLASS[p.cls].label} ${p.n} 座"><span>${p.n}${p.cls}</span></div>`
