@@ -3,7 +3,7 @@ import re
 import unittest
 from pathlib import Path
 
-from scripts.build_data import resolve_cabin, resolve_operator
+from scripts.build_data import published_cabin, resolve_cabin, resolve_operator
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -90,7 +90,7 @@ class CabinLayoutTests(unittest.TestCase):
         columns = json.loads((PUBLIC / "aircraft.col.json").read_text("utf-8"))
         self.assertEqual(len(rows), len(columns["cabin"]))
         for index, row in enumerate(rows):
-            cabin = resolve_cabin(row.get("operator_icao", ""), row.get("type", ""), lookup)
+            cabin = published_cabin(row, lookup)
             self.assertEqual(row.get("cabin", {}), cabin, row["reg"])
             self.assertEqual(columns["columns"]["reg"][index], row["reg"])
             self.assertEqual(columns["cabin_dict"][columns["cabin"][index]], cabin, row["reg"])

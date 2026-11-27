@@ -1,0 +1,143 @@
+{
+  "macao": {
+    "date": "2026-11-28",
+    "source": "https://www.aacm.gov.mo/en/industry-page/RegisteredAircraft",
+    "by_registration": {
+      "B-MBA": {
+        "type": "A321",
+        "operator_icao": "AMU"
+      },
+      "B-MBB": {
+        "type": "A321",
+        "operator_icao": "AMU"
+      },
+      "B-MBC": {
+        "type": "A320",
+        "operator_icao": "AMU"
+      },
+      "B-MBM": {
+        "type": "A321",
+        "operator_icao": "AMU"
+      },
+      "B-MBO": {
+        "type": "A20N",
+        "operator_icao": "AMU"
+      },
+      "B-MBP": {
+        "type": "A20N",
+        "operator_icao": "AMU"
+      },
+      "B-MBQ": {
+        "type": "A21N",
+        "operator_icao": "AMU"
+      },
+      "B-MBR": {
+        "type": "A21N",
+        "operator_icao": "AMU"
+      },
+      "B-MBS": {
+        "type": "A21N",
+        "operator_icao": "AMU"
+      },
+      "B-MBT": {
+        "type": "A21N",
+        "operator_icao": "AMU"
+      },
+      "B-MBU": {
+        "type": "A21N",
+        "operator_icao": "AMU"
+      },
+      "B-MCA": {
+        "type": "A321",
+        "operator_icao": "AMU"
+      },
+      "B-MCB": {
+        "type": "A320",
+        "operator_icao": "AMU"
+      },
+      "B-MCC": {
+        "type": "A321",
+        "operator_icao": "AMU"
+      },
+      "B-MCD": {
+        "type": "A321",
+        "operator_icao": "AMU"
+      },
+      "B-MCE": {
+        "type": "A321",
+        "operator_icao": "AMU"
+      },
+      "B-MCF": {
+        "type": "A320",
+        "operator_icao": "AMU"
+      },
+      "B-MCG": {
+        "type": "A321",
+        "operator_icao": "AMU"
+      },
+      "B-MCH": {
+        "type": "A320",
+        "operator_icao": "AMU"
+      },
+      "B-MCI": {
+        "type": "A320",
+        "operator_icao": "AMU"
+      },
+      "B-MCJ": {
+        "type": "A320",
+        "operator_icao": "AMU"
+      },
+      "B-MCK": {
+        "type": "A20N",
+        "operator_icao": "AMU"
+      },
+      "B-MCL": {
+        "type": "A20N",
+        "operator_icao": "AMU"
+      },
+      "B-MHI": {
+        "type": "A139"
+      },
+      "B-MHN": {
+        "type": "A139"
+      }
+    }
+  },
+  "by_registration": {
+    "B-227W": {
+      "match_icao24": "782320",
+      "fields": {
+        "type": "B77L",
+        "model": "Boeing 777-F1H",
+        "operator_icao": "HLF"
+      },
+      "sources": [
+        "https://www.planespotters.net/airframe/boeing-777f-b-227w-central-airlines/elzqpn",
+        "https://www.airhistory.net/photo/884580/B-227W"
+      ]
+    },
+    "B-30FP": {
+      "match_icao24": "781973",
+      "fields": {
+        "type": "A20N",
+        "model": "Airbus A320-271N",
+        "operator_icao": "CSZ"
+      },
+      "sources": [
+        "https://www.planespotters.net/airframe/airbus-a320neo-b-30fp-shenzhen-airlines/e5o60g",
+        "https://www.flightradar24.com/data/aircraft/b-30fp"
+      ]
+    },
+    "B-300N": {
+      "match_icao24": "781432",
+      "fields": {
+        "type": "A20N",
+        "model": "Airbus A320-271N",
+        "operator_icao": "CSZ"
+      },
+      "sources": [
+        "https://www.planespotters.net/airframe/airbus-a320neo-b-300n-shenzhen-airlines/rqj4v6"
+      ]
+    }
+  }
+}

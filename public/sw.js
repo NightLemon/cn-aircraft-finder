@@ -4,9 +4,8 @@
  *   - Precache the shell (HTML/CSS/JS + manifest) on install.
  *   - Network-first for the shell so deployed UI fixes reach existing users,
  *     with the precache as an offline fallback.
- *   - Stale-while-revalidate for data JSON: serve cached copy immediately, fetch
- *     the latest in the background. This makes repeat visits instant and works
- *     completely offline once you've loaded the site once.
+ *   - Network-first for the small data manifest. The manifest points at a
+ *     versioned set of data files, cached for repeat visits and offline use.
  *   - Network-only for the Planespotters photo API (no point caching, and we
  *     don't want their TOS surprises).
  *
@@ -47,17 +46,34 @@ self.addEventListener('fetch', (event) => {
   // Photo API — never cache.
   if (url.hostname.endsWith('planespotters.net')) return;
 
-  // Same-origin data JSON → stale-while-revalidate.
+  if (url.origin === location.origin && url.pathname.endsWith('/data/meta.json')) {
+    event.respondWith(caches.open(DATA_CACHE).then(async (cache) => {
+      try {
+        const response = await fetch(req);
+        if (response.ok) {
+          await cache.put(req, response.clone());
+          return response;
+        }
+        return (await cache.match(req)) || response;
+      } catch (error) {
+        const cached = await cache.match(req);
+        if (cached) return cached;
+        throw error;
+      }
+    }));
+    return;
+  }
+
+  // Each dataset request carries the content version from the manifest.
   if (url.origin === location.origin && url.pathname.includes('/data/')) {
     event.respondWith(
       caches.open(DATA_CACHE).then((cache) =>
-        cache.match(req).then((cached) => {
-          const fetched = fetch(req).then((res) => {
+        cache.match(req).then((cached) =>
+          cached || fetch(req).then((res) => {
             if (res && res.ok) cache.put(req, res.clone());
             return res;
-          }).catch(() => cached);
-          return cached || fetched;
-        })
+          })
+        )
       )
     );
     return;

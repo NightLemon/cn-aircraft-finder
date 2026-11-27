@@ -73,10 +73,9 @@
     if (!qTokens.length) return 0;
     // Whole-query short-circuit on registration: "B-2445" or "B2445" must hit the
     // canonical reg form first, regardless of how many tokens the user typed.
-    const fullReg = normReg(qTokens.join(''));
-    if (fullReg.length >= 2 && fullReg[0] === 'B') {
-      if (a._reg === fullReg) return 1000;
-      if (a._reg.startsWith(fullReg)) return 800 - (a._reg.length - fullReg.length);
+    if (a._reg === qReg) return 1000;
+    if (qReg.length >= 2 && qReg[0] === 'B' && a._reg.startsWith(qReg)) {
+      return 800 - (a._reg.length - qReg.length);
     }
     // Every token must appear somewhere in the blob (AND match).
     let score = 0;
@@ -105,12 +104,24 @@
   }
 
   function statusTag(a) {
-    if (a.retired) {
+    if (a.registration_status === 'cancelled') {
       const d = a.retired_at ? ` · ${escapeHtml(a.retired_at)}` : '';
-      return `<span class="status-tag retired" title="根据 OpenSky regUntil 字段判定该注册号已注销。">已注销${d}</span>`;
+      return `<span class="status-tag retired" title="FAA 历史登记与机身序列号匹配">登记已注销${d}</span>`;
+    }
+    if (a.registration_status === 'reassigned') {
+      return '<span class="status-tag inactive" title="显示 FAA 核实的现登记机身">注册号已重新分配</span>';
+    }
+    if (a.registration_status === 'conflict') {
+      return '<span class="status-tag inactive" title="来源对同一注册号给出了不同机身">注册号待核实</span>';
+    }
+    if (a.registration_status === 'expiry_reported' || a.retired) {
+      return '<span class="status-tag inactive" title="OpenSky 快照所载登记到期日已过">登记状态待核实</span>';
+    }
+    if (a.type_disputed) {
+      return '<span class="status-tag inactive" title="OpenSky 与 tar1090 的机型代码存在差异">机型待核实</span>';
     }
     if (a.inactive) {
-      return `<span class="status-tag inactive" title="不在 Mictronics tar1090 实时 ADS-B 数据库中，可能已退役 / 封存 / 转售。">久未活跃</span>`;
+      return '<span class="status-tag inactive" title="tar1090 未找到同一注册号和六位地址的记录">未匹配 tar1090</span>';
     }
     return '';
   }
@@ -126,10 +137,12 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  function renderCabin(c, opIcao, typecode) {
+  function renderCabin(c, opIcao, typecode, fromPhoto = false) {
     if (!c || !c.layout) return '';
     const total = c.total ? `<span class="total">共 ${c.total} 座</span>` : '';
-    const src   = c.source === 'curated'
+    const src = fromPhoto
+      ? '<span class="src fallback" title="用照片中的航司名称匹配典型布局">照片推断的布局</span>'
+      : c.source === 'curated'
       ? `<span class="src" title="按航司+机型整理的典型布局">航司典型</span>`
       : `<span class="src fallback" title="该航司无具体数据，使用机型通用布局">通用布局</span>`;
     const notes = c.notes ? `<div class="notes">${escapeHtml(c.notes)}</div>` : '';
@@ -189,35 +202,52 @@
 
   /* Build the row of external deep links. We only add links we can construct
    * safely from the data we already have — registration, ICAO24, IATA op code. */
+  function hasUncertainIdentity(a) {
+    return a.retired || ['conflict', 'reassigned', 'expiry_reported'].includes(a.registration_status);
+  }
+
+  function seatMapLinks(a) {
+    if (hasUncertainIdentity(a) || a.type_disputed || a.category === 'freighter' || a.cabin?.total === 0) return [];
+    const maps = LAYOUTS?.seat_maps;
+    const op = a.operator_icao;
+    const type = a.type;
+    if (!maps || !op) return [];
+    const alias = LAYOUTS.type_aliases?.[type] || type;
+    const charts = maps.by_operator_type[`${op}:${type}`] || maps.by_operator_type[`${op}:${alias}`];
+    if (charts) return charts.map(chart => ({
+      href: chart.url, label: `座位图 · ${chart.label} ↗`, cls: 'aerolopa', title: '该机型的已知客舱构型',
+    }));
+    const page = maps.by_operator[op];
+    return page ? [{ href: page, label: '航司机队座位图 ↗', cls: 'aerolopa', title: '航司收录的机型与座位图' }] : [];
+  }
+
+  function linkPill(item) {
+    return `<a href="${escapeHtml(item.href)}" target="_blank" rel="noopener" class="link-pill ${item.cls}" title="${escapeHtml(item.title)}">${escapeHtml(item.label)}</a>`;
+  }
+
   function renderLinks(a) {
     const reg = a.reg;
     const regLower = reg.toLowerCase().replace(/\s/g, '');
     const icao24 = (a.icao24 || '').toLowerCase();
-    const iata = (a.operator_iata || '').toLowerCase();
     const items = [];
-    items.push({ href: `https://www.flightradar24.com/data/aircraft/${encodeURIComponent(regLower)}`,
-                 label: '实时位置 ↗', cls: 'fr24', title: 'Flightradar24 — 当前飞行轨迹和历史' });
-    if (icao24) {
-      items.push({ href: `https://globe.adsbexchange.com/?icao=${encodeURIComponent(icao24)}`,
-                   label: 'ADS-B Exchange ↗', cls: 'adsbx', title: '无过滤的实时 ADS-B 追踪' });
+    if (a.provenance === 'faa') {
+      items.push({ href: `https://registry.faa.gov/aircraftinquiry/Search/NNumberResult?NNumberTxt=${encodeURIComponent(reg.slice(1))}`,
+                   label: 'FAA 登记 ↗', cls: 'fr24', title: '查看 FAA 注册号档案' });
     }
-    if (iata) {
-      // AeroLOPA's per-airline page lists all types. We can't deep-link to a
-      // single layout reliably (their URL scheme varies), so we stick with the
-      // airline-level URL but at least add a #typecode hash hint.
-      const lopaHref = a.type
-        ? `https://www.aerolopa.com/${encodeURIComponent(iata)}#${encodeURIComponent(a.type)}`
-        : `https://www.aerolopa.com/${encodeURIComponent(iata)}`;
-      items.push({ href: lopaHref,
-                   label: '真实座位图 ↗', cls: 'aerolopa', title: 'AeroLOPA — 该航司全机型座位图' });
+    if (!hasUncertainIdentity(a)) {
+      items.push({ href: `https://www.flightradar24.com/data/aircraft/${encodeURIComponent(regLower)}`,
+                   label: '飞行追踪 ↗', cls: 'fr24', title: 'Flightradar24 飞行轨迹和历史' });
+      if (icao24) {
+        items.push({ href: `https://globe.adsbexchange.com/?icao=${encodeURIComponent(icao24)}`,
+                     label: 'ADS-B Exchange ↗', cls: 'adsbx', title: 'ADS-B 追踪' });
+      }
     }
+    items.push(...seatMapLinks(a));
     items.push({ href: `https://www.jetphotos.com/registration/${encodeURIComponent(reg)}`,
-                 label: 'JetPhotos ↗', cls: 'jetphotos', title: 'JetPhotos — 这架飞机的照片' });
+                 label: 'JetPhotos ↗', cls: 'jetphotos', title: 'JetPhotos · 按注册号查看历史照片' });
     items.push({ href: `https://www.planespotters.net/search?q=${encodeURIComponent(reg)}`,
                  label: 'Planespotters ↗', cls: 'planespotters', title: 'Planespotters — 历史与照片' });
-    return `<div class="links">${items.map(it =>
-      `<a href="${it.href}" target="_blank" rel="noopener" class="link-pill ${it.cls}" title="${escapeHtml(it.title)}">${it.label}</a>`
-    ).join('')}</div>`;
+    return `<div class="links">${items.map(linkPill).join('')}</div>`;
   }
 
   /* Photo lazy loader — talks to Planespotters' free photo API.
@@ -248,9 +278,9 @@
 
   function buildOpsIndex() {
     if (OPS_INDEX) return OPS_INDEX;
-    OPS_INDEX = {};
+    OPS_INDEX = Object.create(null);
     for (const a of DATA) {
-      if (!a.operator_en || a.operator_en === '—') continue;
+      if (!a.operator_icao || !a.operator_en || a.operator_en === '—') continue;
       const slug = a.operator_en.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       if (!slug) continue;
       // First write wins (later duplicates from oddly-named records won't override).
@@ -279,24 +309,38 @@
     return OPS_INDEX;
   }
 
-  // Try to extract "<reg>-<airline-slug>-<model-tokens>" from a Planespotters
-  // photo URL and return the operator slug (lowercase, dashed). Best-effort.
-  function operatorSlugFromPhotoLink(reg, link) {
-    if (!link) return '';
-    const m = link.match(/\/photo\/\d+\/([a-z0-9-]+)/i);
-    if (!m) return '';
-    let slug = m[1].toLowerCase();
-    // Strip the registration prefix, e.g. "b-1245-capital-airlines-..." → "capital-airlines-..."
-    const regSlug = reg.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    if (slug.startsWith(regSlug + '-')) slug = slug.slice(regSlug.length + 1);
-    // Strip the trailing aircraft-type tokens. Look up the longest known prefix in OPS_INDEX.
+  function photoSlug(reg, link) {
+    const match = (link || '').match(/^https:\/\/www\.planespotters\.net\/photo\/\d+\/([a-z0-9-]+)/i);
+    const prefix = reg.toLowerCase() + '-';
+    const slug = match?.[1].toLowerCase() || '';
+    return slug.startsWith(prefix) ? slug.slice(prefix.length) : '';
+  }
+
+  function photoType(slug) {
+    const airbus = slug.match(/(?:^|-)airbus-a(319|320|321)(neo|-\d{3}(?:n[xy]?)?)?(?:-|$)/);
+    if (airbus) {
+      const [, family, variant = ''] = airbus;
+      const neo = variant === 'neo' || /n[xy]?$/.test(variant);
+      return neo ? `A${family.slice(1)}N` : `A${family}`;
+    }
+    const a220 = slug.match(/(?:^|-)(?:airbus-a220-(100|300)|bombardier-cs(100|300))(?:-|$)/);
+    if (a220) return (a220[1] || a220[2]) === '100' ? 'BCS1' : 'BCS3';
+    const max = slug.match(/(?:^|-)boeing-737-(?:max-)?(8|9)(?:-|$)/);
+    if (max) return max[1] === '8' ? 'B38M' : 'B39M';
+    const classic = slug.match(/(?:^|-)boeing-737-([6-9])[a-z0-9]{2}(?:er)?(?:-|$)/);
+    if (classic) return `B73${classic[1]}`;
+    if (/(?:^|-)boeing-777-(?:f[a-z0-9]*|2[a-z0-9]{2}lr)(?:-|$)/.test(slug)) return 'B77L';
+    return '';
+  }
+
+  function operatorFromPhoto(slug) {
     const idx = buildOpsIndex();
     const tokens = slug.split('-');
     for (let n = Math.min(6, tokens.length); n >= 1; n--) {
       const cand = tokens.slice(0, n).join('-');
-      if (idx[cand]) return cand;
+      if (idx[cand]) return idx[cand];
     }
-    return '';
+    return null;
   }
 
   function attachPhoto(card, reg) {
@@ -312,11 +356,19 @@
       .then(r => r.ok ? r.json() : null)
       .then(j => {
         const p = j && j.photos && j.photos[0];
-        if (!p) { PHOTO_CACHE.set(reg, null); if (slot.isConnected) slot.remove(); return; }
+        const slug = photoSlug(reg, p?.link);
+        const type = photoType(slug);
+        const record = DATA.find(a => a.reg === reg);
+        if (!slug || (record?.type && type && record.type !== type)) {
+          PHOTO_CACHE.set(reg, null);
+          if (slot.isConnected) slot.remove();
+          return;
+        }
         const v = {
           src: (p.thumbnail_large && p.thumbnail_large.src) || (p.thumbnail && p.thumbnail.src),
           link: p.link,
           photographer: p.photographer || '',
+          slug, type,
         };
         PHOTO_CACHE.set(reg, v);
         injectPhoto(slot, v);
@@ -330,8 +382,8 @@
     // Clicking the image opens the in-page modal; the photographer credit
     // still links out to planespotters.net for the original source.
     slot.innerHTML = `
-      <img src="${v.src}" alt="" loading="lazy" />
-      <div class="photo-credit"><a href="${v.link}" target="_blank" rel="noopener" title="原图与摄影者">© ${escapeHtml(v.photographer || 'planespotters.net')} ↗</a></div>`;
+      <img src="${escapeHtml(v.src)}" alt="" loading="lazy" />
+      <div class="photo-credit"><a href="${escapeHtml(v.link)}" target="_blank" rel="noopener" title="注册号资料照片">© ${escapeHtml(v.photographer || 'planespotters.net')} ↗</a></div>`;
   }
 
   let photoDlg = null;
@@ -340,23 +392,21 @@
     if (!photoDlg) return;
     document.getElementById('photoBig').src = v.src;
     document.getElementById('photoMeta').innerHTML =
-      `<a href="${v.link}" target="_blank" rel="noopener">© ${escapeHtml(v.photographer || 'planespotters.net')} ↗</a>`;
+      `<a href="${escapeHtml(v.link)}" target="_blank" rel="noopener">© ${escapeHtml(v.photographer || 'planespotters.net')} ↗</a>`;
     if (typeof photoDlg.showModal === 'function') photoDlg.showModal();
     else photoDlg.setAttribute('open', '');
   }
 
-  // If the card is showing "未匹配到航司", try to look the airline up by parsing
-  // the Planespotters slug. Update DOM in place. We deliberately do NOT show
-  // a cabin layout in this case — we don't know the actual cabin config.
+  // A photo can suggest the airline when its registration and model agree
+  // with the card. The timestamp and current operating airline remain unknown.
   function maybeFillOperator(card, reg, photo) {
     if (!card.isConnected) return;
     const opVal = card.querySelector('.row-op .val');
     if (!opVal) return;
     if (!opVal.querySelector('.unmatched')) return;     // already has an operator
-    const slug = operatorSlugFromPhotoLink(reg, photo && photo.link);
-    if (!slug) return;
-    const idx = buildOpsIndex();
-    const op = idx[slug];
+    const me = DATA.find(a => a.reg === reg);
+    if (!me || hasUncertainIdentity(me) || me.type_disputed || photo.type !== me.type || !photo.type) return;
+    const op = operatorFromPhoto(photo.slug);
     if (!op) return;
     opVal.innerHTML = `<a class="op-link" href="#" data-op-search="${escapeHtml(op.name_zh)}">${escapeHtml(op.name_zh)}</a>` +
       (op.short_zh ? ` <span class="small">(${escapeHtml(op.short_zh)})</span>` : '') +
@@ -369,33 +419,16 @@
         row1.insertAdjacentHTML('beforeend', allianceTag(op.alliance));
       }
     }
-    // Inject an AeroLOPA link if we now have the IATA code and one isn't already there.
-    if (op.iata) {
-      const links = card.querySelector('.links');
-      if (links && !links.querySelector('.link-pill.aerolopa')) {
-        const before = links.querySelector('.link-pill.jetphotos');
-        const html = `<a href="https://www.aerolopa.com/${encodeURIComponent(op.iata.toLowerCase())}" target="_blank" rel="noopener" class="link-pill aerolopa" title="AeroLOPA — 该航司全机型座位图">真实座位图 ↗</a>`;
-        if (before) before.insertAdjacentHTML('beforebegin', html);
-        else links.insertAdjacentHTML('beforeend', html);
-      }
+    const alias = LAYOUTS?.type_aliases?.[me.type] || me.type;
+    const byOp = LAYOUTS?.by_operator_type;
+    const cab = byOp?.[`${op.icao}:${me.type}`] || byOp?.[`${op.icao}:${alias}`];
+    if (cab) {
+      const html = renderCabin({ ...cab, source: 'curated' }, op.icao, me.type, true);
+      card.querySelector('.row-op').insertAdjacentHTML('afterend', html);
     }
-    // Try to backfill the cabin layout: query LAYOUTS table by (op_icao, type).
-    const reg0 = card.dataset.reg;
-    const me = DATA.find((x) => x.reg === reg0);
-    if (LAYOUTS && me && op.icao && me.type) {
-      const key = `${op.icao}:${me.type}`;
-      const cab = (LAYOUTS.by_operator_type && LAYOUTS.by_operator_type[key])
-                  || (LAYOUTS.fallback_by_type && LAYOUTS.fallback_by_type[me.type]);
-      if (cab && cab.layout) {
-        const c = Object.assign({}, cab, {
-          source: (LAYOUTS.by_operator_type && LAYOUTS.by_operator_type[key]) ? 'curated' : 'fallback',
-        });
-        const cabinHtml = renderCabin(c, op.icao, me.type);
-        if (cabinHtml) {
-          card.querySelector('.row-op').insertAdjacentHTML('afterend', cabinHtml);
-        }
-      }
-    }
+    const links = card.querySelector('.links');
+    const charts = seatMapLinks({ ...me, operator_icao: op.icao, cabin: cab });
+    if (links && charts.length) links.insertAdjacentHTML('afterbegin', charts.map(linkPill).join(''));
   }
 
   function ageYears(built) {
@@ -415,32 +448,6 @@
     return `<span class="age-badge ${cls}" title="基于出厂年估算">机龄 ${years.toFixed(1)} 年</span>`;
   }
 
-  /* Chinese B-registration block hint. Mainland China civil aviation assigns
-   * registration blocks by aircraft type; the leading digit tells you roughly
-   * what to expect. Source: CAAC public reference + common community knowledge.
-   * (We deliberately keep this to a brief tooltip — full mapping at xmyzl.com.) */
-  function bRegHint(reg) {
-    const m = (reg || '').match(/^B-?(\d)(\d?)/);
-    if (!m) return '';
-    const d1 = m[1], d2 = m[2] || '';
-    // B-0xxxx 直升机 / B-1xxx 新分窄体 / B-2xxx 老分窄体 / B-3xxx 支线/部分窄体
-    // B-4xxx 公务机 / B-5xxx 窄体 / B-6xxx A320/A330 / B-7xxx 货机/公务机
-    // B-8xxx 公务/支线 / B-9xxx 公务/支线 / B-KAxx 香港 / B-MAxx 澳门
-    const blocks = {
-      '0': '直升机',
-      '1': '窄体客机（较新批次）',
-      '2': '窄体客机（早期）',
-      '3': '支线 / 部分窄体',
-      '4': '公务机',
-      '5': '窄体客机',
-      '6': '宽体 A330/A350',
-      '7': '货机 / 公务',
-      '8': '公务机 / 支线',
-      '9': '公务机 / 支线',
-    };
-    return blocks[d1] ? `${reg.slice(0,2)}${d1}${d2 || 'x'}xx：${blocks[d1]}` : '';
-  }
-
   function sameTypeInFleetLink(a) {
     if (!a.operator_icao || !a.type) return '';
     let n = 0;
@@ -454,8 +461,6 @@
 
   function renderCard(a) {
     const hasOp = a.operator_zh && a.operator_zh !== '—';
-    const bHint = bRegHint(a.reg);
-    const bHintLine = bHint ? `<div class="line"><span class="label">号段</span><span class="val small" title="中国大陆民航局号段惯例 — 仅供参考">${escapeHtml(bHint)}</span></div>` : '';
     const logoSrc = hasOp ? logoUrl(a) : '';
     const logo = logoSrc ? `<img class="op-logo" src="${logoSrc}" alt="" loading="lazy" onerror="this.remove()" />` : '';
     const fleetBtn = hasOp && a.operator_icao
@@ -470,15 +475,15 @@
       : (a.model ? escapeHtml(a.model) + typeBtn : '<span class="small">未知机型</span>');
     const age = ageYears(a.built);
     const builtLine = a.built ? `<div class="line"><span class="label">出厂</span><span class="val">${escapeHtml(shortYear(a.built))} 年 ${ageBadge(age)}</span></div>` : '';
-    const inSvc = a.in_service_at ? `<div class="line"><span class="label">服役</span><span class="val">${escapeHtml(a.in_service_at)} 起</span></div>` : '';
+    const inSvc = a.in_service_at ? `<div class="line"><span class="label">登记日期</span><span class="val">${escapeHtml(a.in_service_at)}</span></div>` : '';
     const nextRegHtml = a.next_reg
       ? ` · 后续号 <a href="?q=${encodeURIComponent(a.next_reg)}" class="next-reg" data-q="${escapeHtml(a.next_reg)}">${escapeHtml(a.next_reg)}</a>`
       : '';
-    const retired = a.retired_at ? `<div class="line"><span class="label">退役</span><span class="val" style="color:var(--fg-mute)">${escapeHtml(a.retired_at)}已注销${nextRegHtml}</span></div>` : '';
+    const retired = a.registration_status === 'cancelled' ? `<div class="line"><span class="label">登记注销</span><span class="val" style="color:var(--fg-mute)">${escapeHtml(a.retired_at)}${nextRegHtml}</span></div>` : '';
     const serial = a.serial ? `<div class="line"><span class="label">序列号</span><span class="val">${escapeHtml(a.serial)}</span></div>` : '';
     const icao24 = a.icao24 ? `<div class="line"><span class="label">ICAO24</span><span class="val" style="font-family:var(--mono)">${escapeHtml(a.icao24.toUpperCase())}</span></div>` : '';
-    const showPhoto = !a.retired;
-    const cabinHtml = hasOp ? renderCabin(a.cabin, a.operator_icao, a.type) : '';
+    const showPhoto = !hasUncertainIdentity(a) && !a.type_disputed;
+    const cabinHtml = hasOp && !a.retired && !a.type_disputed ? renderCabin(a.cabin, a.operator_icao, a.type) : '';
 
     return `
       <article class="result-card${a.retired ? ' is-retired' : (a.inactive ? ' is-inactive' : '')}" data-reg="${escapeHtml(a.reg)}">
@@ -492,7 +497,7 @@
         <div class="line"><span class="label">机型</span><span class="val b">${typeLine}</span></div>
         <div class="line row-op"><span class="label">航司</span><span class="val b">${opLink}</span></div>
         ${cabinHtml}
-        ${builtLine}${inSvc}${retired}${serial}${icao24}${bHintLine}
+        ${builtLine}${inSvc}${retired}${serial}${icao24}
         ${renderLinks(a)}
         ${sameTypeInFleetLink(a)}
       </article>`;
@@ -655,9 +660,9 @@
       <p class="small">${escapeHtml(first.operator_en || '')} · ${first.operator_icao || ''}${first.operator_iata ? ' / ' + first.operator_iata : ''}</p>
       <div class="stat-row">
         <div class="stat"><div class="stat-n">${fleet.length}</div><div class="stat-l">总机队</div></div>
-        <div class="stat"><div class="stat-n">${nActive}</div><div class="stat-l">在役</div></div>
-        <div class="stat"><div class="stat-n">${nInactive}</div><div class="stat-l">久未活跃</div></div>
-        <div class="stat"><div class="stat-n">${nRetired}</div><div class="stat-l">已注销</div></div>
+        <div class="stat"><div class="stat-n">${nActive}</div><div class="stat-l">匹配 tar1090</div></div>
+        <div class="stat"><div class="stat-n">${nInactive}</div><div class="stat-l">未匹配 tar1090</div></div>
+        <div class="stat"><div class="stat-n">${nRetired}</div><div class="stat-l">登记已注销</div></div>
         <div class="stat"><div class="stat-n">${avgAge}</div><div class="stat-l">平均机龄</div></div>
       </div>
       <h3>机型分布</h3>
@@ -704,7 +709,7 @@
       <p class="small">${escapeHtml(sample.type_en || '')}</p>
       <div class="stat-row">
         <div class="stat"><div class="stat-n">${fleet.length}</div><div class="stat-l">全球架数</div></div>
-        <div class="stat"><div class="stat-n">${nActive}</div><div class="stat-l">在役</div></div>
+        <div class="stat"><div class="stat-n">${nActive}</div><div class="stat-l">匹配 tar1090</div></div>
         <div class="stat"><div class="stat-n">${byOp.size}</div><div class="stat-l">运营商</div></div>
         <div class="stat"><div class="stat-n">${avgAge}</div><div class="stat-l">平均机龄</div></div>
       </div>
@@ -757,8 +762,9 @@
         filtered.push([s, a]);
       }
     }
-    // Sort: active > inactive > retired (by score, then reg).
+    // Exact registrations take precedence over partial and descriptive matches.
     filtered.sort((x, y) => {
+      if ((x[0] === 1000) !== (y[0] === 1000)) return y[0] - x[0];
       const ord = (a) => a.retired ? 2 : (a.inactive ? 1 : 0);
       const ox = ord(x[1]), oy = ord(y[1]);
       if (ox !== oy) return ox - oy;
@@ -805,7 +811,9 @@
     const recentLine = (rec && (rec.built_this_year || rec.retired_this_year))
       ? ` · ${rec.year} 年至今：出厂 ${rec.built_this_year} 架，注销 ${rec.retired_this_year} 架`
       : '';
-    metaLine.textContent = `共 ${t} 条记录 · 数据快照: ${src.replace('metadata/aircraft-database-complete-','').replace('.csv','')} · 构建: ${gen}${recentLine}`;
+    const registries = META.registry_sources;
+    const registryLine = registries ? ` · FAA ${registries.faa} · 澳门登记 ${registries.macao}` : '';
+    metaLine.textContent = `共 ${t} 条记录 · OpenSky ${src.replace('metadata/aircraft-database-complete-','').replace('.csv','')}${registryLine} · 构建 ${gen}${recentLine}`;
   }
 
   /* ---------------- bootstrap ---------------- */
@@ -816,7 +824,7 @@
       // with that stamp as a cache buster so refreshes pick up new data.
       const metaRes = await fetch('data/meta.json', { cache: 'no-cache' });
       META = metaRes.ok ? await metaRes.json() : {};
-      const stamp = encodeURIComponent(META.generated_at || Date.now());
+      const stamp = encodeURIComponent(META.data_version || META.generated_at || Date.now());
       // Prefer column-store format (smaller). Fall back to the legacy row format.
       let acRes = await fetch('data/aircraft.col.json?v=' + stamp);
       if (acRes.ok) {

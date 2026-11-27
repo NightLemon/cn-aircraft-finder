@@ -7,6 +7,8 @@
     "Y": "经济舱"
   },
 
+  "type_aliases": {"E75L": "E175", "E75S": "E175"},
+
   "by_operator_type": {
     "CCA:B738": {"layout": "8C + 159Y", "total": 167, "notes": "167 座版本，另有 159 座和 176 座版本。"},
     "CCA:A320": {"layout": "8C + 150Y", "total": 158, "notes": "国航 A320 双舱布局"},
@@ -177,6 +179,8 @@
     "CPA:A333": {"layout": "39C + 223Y", "total": 262, "notes": "国泰 A330-300 区域版"},
     "CPA:A21N": {"layout": "12C + 190Y", "total": 202, "notes": "202 座版本。另有 195 座（12C + 183Y）版本。"},
 
+    "AMU:A20N": {"layout": "8C + 150Y", "total": 158, "notes": "空客交付资料的 158 座双舱版。"},
+    "AMU:A21N": {"layout": "12C + 186Y", "total": 198, "notes": "32Q 双舱版。"},
     "AMU:A320": {"layout": "8C + 150Y", "total": 158, "notes": ""},
     "AMU:A321": {"layout": "24C + 155Y", "total": 179, "notes": "另有 182 座（12C + 170Y）版本。"},
 
@@ -221,7 +225,7 @@
     "AAL:A321": {"layout": "20C + 35W + 135Y", "total": 190, "notes": "190 座版本，W 为 Main Cabin Extra。跨大陆航线另有 102 座版本。"},
     "AAL:A21N": {"layout": "20C + 35W + 141Y", "total": 196, "notes": "196 座版本，W 为 Main Cabin Extra。A321XLR 另有 155 座版本。"},
     "AAL:CRJ7": {"layout": "9C + 12W + 44Y", "total": 65, "notes": "American Eagle 的 65 座版本，W 为 Main Cabin Extra。"},
-    "AAL:CRJ9":  {"layout": "9C + 12W + 44Y",               "total": 65,  "notes": "美航支线 CRJ-900"},
+    "AAL:CRJ9": {"layout": "12C + 64Y", "total": 76, "notes": "PSA 执飞的 76 座版本，经济舱合计含 Main Cabin Extra。美航另列 79 座构型。"},
     "AAL:E170": {"layout": "12C + 20W + 33Y", "total": 65, "notes": "American Eagle 的 65 座版本，W 为 Main Cabin Extra。"},
     "AAL:E175":  {"layout": "12C + 20W + 44Y",              "total": 76,  "notes": "美航支线 E175"},
     "AAL:B788":  {"layout": "20C + 28W + 186Y",             "total": 234, "notes": "美航 787-8"},
@@ -271,6 +275,7 @@
     "ASA:B38M":  {"layout": "16C + 24W + 119Y",             "total": 159, "notes": "阿拉斯加 737 MAX 8"},
     "ASA:B39M":  {"layout": "16C + 30W + 132Y",             "total": 178, "notes": "阿拉斯加 737 MAX 9"},
 
+    "JBU:BCS3": {"layout": "140Y", "total": 140, "notes": "捷蓝 A220-300，经济舱合计含加大间距座位。"},
     "JBU:A320":  {"layout": "162Y",                         "total": 162, "notes": "捷蓝 A320 全经济舱（含 Even More Space）"},
     "JBU:A321":  {"layout": "200Y",                         "total": 200, "notes": "捷蓝 A321ceo 全经济舱"},
     "JBU:A21N": {"layout": "200Y", "total": 200, "notes": "200 座版本，经济舱合计包含加大间距座位。Mint 版本另有 138 座（24C + 114Y）和 160 座（16C + 144Y）。"},
@@ -297,12 +302,12 @@
     "SKW:CRJ2": {"layout": "50Y",                           "total": 50,  "notes": "天西 CRJ-200（陆续退役）"},
     "SKW:CRJ7": {"layout": "9C + 60Y",                      "total": 69,  "notes": "天西 CRJ-700 双舱"},
     "SKW:CRJ9": {"layout": "12C + 64Y",                     "total": 76,  "notes": "天西 CRJ-900"},
-    "SKW:E175": {"layout": "12C + 64Y",                     "total": 76,  "notes": "天西 E175"},
+    "SKW:E175": {"layout": "12C + 64Y", "total": 76, "notes": "天西航空 76 座版。实际客舱视合作航司与该架飞机的构型。"},
     "ENY:E170": {"layout": "12C + 20W + 33Y", "total": 65, "notes": "Envoy 执飞 American Eagle 的 65 座版本，W 为 Main Cabin Extra。"},
     "ENY:E175": {"layout": "12C + 20W + 44Y",               "total": 76,  "notes": "Envoy E175"},
     "ASH:CRJ9": {"layout": "12C + 64Y",                     "total": 76,  "notes": "Mesa CRJ-900"},
     "RPA:E170": {"layout": "9C + 12W + 49Y",                "total": 70,  "notes": "Republic E170"},
-    "RPA:E175": {"layout": "12C + 20W + 44Y",               "total": 76,  "notes": "Republic E175"},
+    "RPA:E175": {"layout": "12C + 20W + 44Y", "total": 76, "notes": "Republic 为美航等合作航司执飞。此为 76 座美航版，座位产品随承运航司变化。"},
 
     "EZY:A319": {"layout": "156Y",                          "total": 156, "notes": "易捷 A319 全经济舱"},
     "EZY:A320": {"layout": "186Y",                          "total": 186, "notes": "易捷 A320 全经济舱"},
@@ -520,6 +525,7 @@
     "KAL:B77W": {"layout": "8F + 56C + 227Y",               "total": 291, "notes": "大韩 77W"},
     "KAL:B789": {"layout": "6F + 18C + 245Y",               "total": 269, "notes": "大韩 787-9"},
 
+    "HLF:B77L": {"layout": "纯货机", "total": 0, "notes": "中州航空 777F。"},
     "AAR:A321": {"layout": "12C + 162Y", "total": 174, "notes": ""},
     "AAR:A359": {"layout": "28C + 36W + 247Y",              "total": 311, "notes": "韩亚 A350-900"},
     "AAR:A388": {"layout": "12F + 66C + 417Y",              "total": 495, "notes": "韩亚 A380"},
@@ -695,12 +701,12 @@
     "UAL:B737": {"layout": "12C + 114Y", "total": 126, "notes": ""},
     "UAL:B763": {"layout": "46C + 22W + 99Y", "total": 167, "notes": "167 座高公务舱密度版本。W 为 Premium Plus，Y 包含 Economy Plus。另有 203 座版本。"},
     "UAL:A21N": {"layout": "20C + 54W + 126Y",              "total": 200, "notes": "美联航 A321neo 替换 757"},
-    "SNJ:B738": {"layout": "177Y",                          "total": 177, "notes": "天马航空 738 全经济"},
+    "SKY:B738": {"layout": "177Y",                          "total": 177, "notes": "天马航空 738 全经济"},
     "TVS:B738": {"layout": "189Y",                          "total": 189, "notes": "Smartwings 738 全经济"},
     "CES:B737": {"layout": "8C + 126Y", "total": 134, "notes": "134 座双舱版本。"},
     "AAY:MD83": {"layout": "166Y",                          "total": 166, "notes": "忠实 MD-83（已逐步退役）"},
     "AAL:MD83": {"layout": "16C + 124Y",                    "total": 140, "notes": "美航 MD-83（已退役）"},
-    "AUL:B738": {"layout": "189Y",                          "total": 189, "notes": "胜利航空（Pobeda）738 全经济"},
+    "PBD:B738": {"layout": "189Y",                          "total": 189, "notes": "胜利航空（Pobeda）738 全经济"},
     "DLH:CRJ9": {"layout": "12C + 64Y",                     "total": 76,  "notes": "Lufthansa CityLine CRJ-900"},
     "AEA:B738": {"layout": "12C + 174Y",                    "total": 186, "notes": "Air Europa 738"},
     "EIN:A320": {"layout": "174Y (Y only, with C blocked)", "total": 174, "notes": "爱尔兰 A320 短途单舱"},
@@ -756,7 +762,7 @@
 
     "KZR:A20N": {"layout": "16C + 132Y", "total": 148, "notes": ""},
 
-    "RJA:A20N": {"layout": "180Y", "total": 180, "notes": "约旦皇家航空公布的 180 座全经济舱版本。"},
+    "RJA:A20N": {"layout": "180Y", "total": 180, "notes": "航司公布的 180 座全经济舱版。另有 150 座双舱版本。"},
 
     "SBI:A20N": {"layout": "8C + 156Y", "total": 164, "notes": "空客公布的 164 座交付构型。"},
 
@@ -788,8 +794,8 @@
     "B789": {"layout": "30C + 24W + 220Y (典型)", "total": 274, "notes": "B787-9 三舱"},
     "B788": {"layout": "30C + 215Y (典型)", "total": 245, "notes": "B787-8"},
     "B77L": {"layout": "客运或货运", "notes": "B77L 同时用于 777-200LR 客机和 777F 货机，需按运营人确认。"},
-    "B748": {"layout": "12F + 54C + 66W + 233Y (典型) / 货机", "total": 365, "notes": "B747-8 客货均有"},
-    "B744": {"layout": "12F + 54C + 50W + 256Y (典型) / 货机", "total": 372, "notes": "B747-400 客货均有"},
+    "B748": {"layout": "客运或货运", "notes": "机型代码涵盖客机及货机，具体客舱需按运营人和版本确认。"},
+    "B744": {"layout": "客运或货运", "notes": "机型代码涵盖客机及货机，具体客舱需按运营人和版本确认。"},
     "AJ27": {"layout": "90Y (典型)", "total": 90, "notes": "ARJ21 单舱常见配置"},
     "C919": {"layout": "8C + 156Y (典型)", "total": 164, "notes": "C919 双舱常见配置"},
     "E190": {"layout": "8C + 90Y (典型)", "total": 98, "notes": "E190 双舱"},

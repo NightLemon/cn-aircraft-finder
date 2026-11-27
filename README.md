@@ -4,7 +4,7 @@
 
 🌐 在线查询：<https://nightlemon.github.io/cn-aircraft-finder/>
 
-📋 项目状态与路线图：[`docs/STATUS.md`](docs/STATUS.md)
+📋 [项目状态与路线图](docs/STATUS.md) · [数据准确性核查](docs/data-accuracy-audit-2026-11-28.md)
 
 ---
 
@@ -16,46 +16,46 @@
 - 🏢 **航司**：中国国际航空（国航，CCA / CA）⭐ 星空联盟
 - 💺 **典型客舱布局**：10F + 42C + 292Y（共 344 座，含彩色比例条和图例）
 - 📸 **飞机照片**（来自合作伙伴 API，含摄影师署名链接）
-- 🟢 **服役状态**：在役 / 久未活跃 / 已注销（含日期）
+- 🟢 **登记状态**：登记注销、号码复用及资料待核实提示
 - 🔗 **跳转链接**：飞行追踪 / 真实座位图 / 照片库 等
-- 📅 **关键日期**：出厂年、服役起始、注销日（如有）
+- 📅 **关键日期**：出厂年、登记日期、注销日（如有）
 - 🆔 **技术细节**：序列号、ICAO24 hex
 
 ## 数据规模
 
-下列数字来自 2026-11-05 构建的飞机快照和 2026-11-21 的客舱核查。
+下列数字来自 2026-11-28 的数据构建。
 
 | 项目 | 数量 |
 | --- | --- |
-| 总飞机数 | 55,769 架 |
-| 在役 | 51,252 |
-| 久未活跃（疑似退役） | 4,023 |
-| 已注销（民航局已撤销） | 494 |
-| 已命名的 ICAO 航司映射 | 256 |
-| 已命名的机型代码 | 137 |
-| 航司与机型的专属客舱记录 | 647 条 |
-| 已识别航司的商用飞机中，能匹配航司专属客舱的记录 | 20,033 / 26,380（75.9%） |
+| 总飞机数 | 57,148 架 |
+| 匹配 tar1090 | 51,004 |
+| 未匹配 tar1090 | 4,534 |
+| 登记已注销 | 1,610 |
+| 已命名的 ICAO 航司映射 | 264 |
+| 已命名的机型代码 | 154 |
+| 航司与机型的专属客舱记录 | 651 条 |
+| 已识别航司的商用飞机中，能匹配航司专属客舱的记录 | 20,067 / 28,400（70.7%） |
 
 ### 按地区分布
 
 | 地区 | 飞机数 | 地区 | 飞机数 |
 | --- | --- | --- | --- |
-| 美国 | 16,363 | 欧陆 | 10,109 |
-| 中国大陆 | 7,374 | 拉美 | 4,038 |
-| 东南亚 | 2,657 | 公务机 | 2,142 |
-| 英国/爱尔兰 | 2,114 | 中东 | 2,085 |
-| 俄罗斯/独联体 | 1,764 | 加拿大 | 1,500 |
-| 南亚 | 1,335 | 大洋洲 | 1,076 |
-| 日本 | 941 | 非洲 | 873 |
-| 韩国 | 661 | 台湾 | 360 |
-| 香港 | 358 | 澳门 | 19 |
+| 美国 | 17,011 | 欧陆 | 10,348 |
+| 中国大陆 | 7,382 | 拉美 | 4,167 |
+| 东南亚 | 2,669 | 公务机 | 2,072 |
+| 英国/爱尔兰 | 2,177 | 中东 | 2,091 |
+| 俄罗斯/独联体 | 1,757 | 加拿大 | 1,612 |
+| 南亚 | 1,345 | 大洋洲 | 1,109 |
+| 日本 | 963 | 非洲 | 932 |
+| 韩国 | 664 | 台湾 | 352 |
+| 香港 | 372 | 澳门 | 31 |
 
 ### 三大联盟全部覆盖
 
 | 联盟 | 飞机数 |
 | --- | --- |
-| ⭐ Star Alliance | 7,070 |
-| ✈️ SkyTeam | 4,966 |
+| ⭐ Star Alliance | 7,079 |
+| ✈️ SkyTeam | 4,941 |
 | 🌐 oneworld | 4,394 |
 
 ## 怎么用
@@ -80,35 +80,42 @@ URL 直链可分享筛选状态：`?q=B-2445&region=mainland&service=active`。�
 | 字段 | 来源 |
 | --- | --- |
 | 注册号 / ICAO24 / 机型代码 / 序列号 / 出厂年 / 注册到期日 | [OpenSky Network](https://opensky-network.org/) 最新可用公开飞机快照（CC-BY-NC 4.0，快照月份显示在页面顶部） |
-| 实时活跃判定 | [Mictronics tar1090-db](https://github.com/wiedehopf/tar1090-db) 每周更新的 ADS-B 飞机数据库 |
+| 飞机补录与资料匹配 | [tar1090-db / Mictronics](https://github.com/wiedehopf/tar1090-db) 飞机元数据库 |
+| 登记身份核验 | [美国 FAA](https://www.faa.gov/licenses_certificates/aircraft_certification/aircraft_registry/releasable_aircraft_download) 和[澳门民航局](https://www.aacm.gov.mo/en/industry-page/RegisteredAircraft) 的登记资料 |
+| 已核查的座位图入口 | [座位图目录](data/seat_maps.json) 记录具体构型或航司机队页 |
 | 航司中英文名 / 简称 / IATA 代码 / 所属联盟 | 本仓库 [`data/operators.json`](data/operators.json) 手工维护 |
 | 机型中英文名 / 类别 | 本仓库 [`data/aircraft_types.json`](data/aircraft_types.json) 基于 ICAO Doc 8643 |
 | 典型客舱布局 | 本仓库 [`data/cabin_layouts.json`](data/cabin_layouts.json) 整理自公开座位图与航司官网 |
-| 飞机照片 | [Planespotters.net](https://www.planespotters.net/photo-api) 公开 Photo API（含摄影师署名） |
+| 飞机照片 | [Planespotters.net](https://www.planespotters.net/photo/api) 公开 Photo API（含摄影师署名） |
 
 > **客舱布局**按航司和机型匹配。同一组合可有多种配置，已查到的其他版本写在卡片备注中。实际航班请看航司选座图。[客舱数据核查记录](docs/cabin-layout-audit.md)
 >
-> ⚠️ **过滤** 为控制数据量，构建脚本只保留能匹配到白名单航司的飞机。私人 / 通用航空 / 军用机一般不在内（中国大陆/港/澳/台 B- 注册号宽松保留）。
+> 快照主要覆盖已知航司和商用飞机。大中华区注册号保留范围更宽。
 
-## 服役状态分三层
+## 登记状态和资料匹配
 
-| 状态 | 标签 | 判定依据 |
-| --- | --- | --- |
-| 在役 | 无 | 在 Mictronics 实时 ADS-B 数据库中 |
-| 久未活跃 | 黄色 `久未活跃` | 在 OpenSky 但 **不在** Mictronics —— 多半已停飞 / 封存 / 转售 |
-| 已注销 | 红色 `已注销 · 日期` | OpenSky 的 `regUntil` 早于今天 —— 民航局已撤销注册 |
+| 标签 | 依据 |
+| --- | --- |
+| 登记已注销 | FAA 历史登记与注册号、机身序列号匹配 |
+| 注册号已重新分配 | FAA 历史登记确认旧机身，现登记对应另一机身 |
+| 注册号或机型待核实 | 数据源给出冲突身份或机型 |
+| 登记状态待核实 | OpenSky 快照所载到期日已过 |
+| 未匹配 tar1090 | 当前 tar1090 快照缺少同一注册号及六位地址的记录 |
+
+实时飞行情况可通过卡片上的追踪入口查询。
 
 ## 本地运行
 
 ```bash
-# 准备：Python 3.8+，能联网下载数据
-python scripts/fetch_opensky.py     # 下载月度 OpenSky CSV (~100 MB) + Mictronics 数据库 (~33 MB)
+# 准备 Python 3.12 和用于拼音字段的 pypinyin
+python -m pip install pypinyin
+python scripts/fetch_opensky.py     # 下载最新可用 OpenSky 与 tar1090 快照
 python scripts/build_data.py        # 构建 public/data/aircraft.json + meta.json + cabin_layouts.json
 cd public && python -m http.server 8000
 # 浏览器打开 http://localhost:8000
 ```
 
-性能：前端优先加载 `aircraft.col.json`，当前约 7.0 MiB（gzip 后约 0.85 MiB）；`aircraft.json` 作为兼容回退约 22.2 MiB。
+前端优先加载 7.6 MiB 的列式文件。行式兼容文件约 23.4 MiB。
 
 ## 自动更新
 
@@ -158,6 +165,20 @@ python scripts/build_data.py --cabins-only
 python -m unittest discover -s tests
 ```
 
+座位图链接在 `data/seat_maps.json` 维护。具体构型填到 `by_operator_type`，只有航司机队页时填到 `by_operator`。
+
+### 更新登记核验数据
+
+从 FAA 下载 `ReleasableAircraft.zip` 后，用公开文件的实际快照日期重新生成经序列号校验的修订。原始 ZIP 留在本地。
+
+```bash
+python scripts/update_faa_corrections.py /path/to/ReleasableAircraft.zip --date YYYY-MM-DD
+python scripts/build_data.py
+python -m unittest discover -s tests
+```
+
+澳门登记册及逐架核实的航司机型更正保存在 `data/airframe_corrections.json`。个别机身的更正只有在六位地址匹配时生效。
+
 ### 客舱布局有误？最快流程
 
 每张卡片的客舱条右上角有 **报错 ✏️** 链接，点击会跳到 GitHub Issue 模板，自动带上航司机型键和当前布局。请附上具体配置、座位图或航司链接。如能确认注册号或客舱版本，也请一并填写。
@@ -174,7 +195,8 @@ cn-aircraft-finder/
 ├── data/                              # 手工维护的数据源
 │   ├── operators.json                 # 航司白名单
 │   ├── aircraft_types.json            # 机型字典
-│   └── cabin_layouts.json             # 客舱布局
+│   ├── cabin_layouts.json             # 客舱布局
+│   └── seat_maps.json                 # 核实的座位图入口
 ├── scripts/
 │   ├── fetch_opensky.py               # 数据下载
 │   └── build_data.py                  # CSV → JSON

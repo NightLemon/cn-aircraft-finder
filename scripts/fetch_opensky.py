@@ -9,6 +9,7 @@ The Mictronics tar1090 DB is updated weekly and lives at:
 """
 from __future__ import annotations
 import gzip
+import hashlib
 import re
 import shutil
 import sys
@@ -98,6 +99,7 @@ def fetch_mictronics() -> None:
     data = read_url(MI_URL, timeout=120)
     raw = gzip.decompress(data)
     OUT_MI.write_bytes(raw)
+    (RAW_DIR / "mictronics-source.txt").write_text("sha256:" + hashlib.sha256(data).hexdigest() + "\n", encoding="utf-8")
     rows = raw.count(b"\n")
     print(f"[fetch] saved {OUT_MI} ({len(raw)/1_048_576:.1f} MiB, {rows:,} rows)", file=sys.stderr)
 

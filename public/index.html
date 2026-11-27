@@ -71,9 +71,9 @@
       </select>
       <select id="service">
         <option value="">所有状态</option>
-        <option value="active">仅在役</option>
-        <option value="inactive">仅久未活跃</option>
-        <option value="retired">仅已注销</option>
+        <option value="active">匹配 tar1090</option>
+        <option value="inactive">未匹配 tar1090</option>
+        <option value="retired">登记已注销</option>
       </select>
       <select id="category">
         <option value="">所有类别</option>
@@ -120,22 +120,16 @@
   </ul>
   <h3>数据来源</h3>
   <ul>
-    <li><b>飞机/航司基础数据</b>：来自 <a href="https://opensky-network.org/" target="_blank" rel="noopener">OpenSky Network</a> 月度公开飞机数据库（CC-BY-NC 许可）。</li>
-    <li><b>实时活跃信号</b>：来自 <a href="https://github.com/wiedehopf/tar1090-db" target="_blank" rel="noopener">tar1090-db / Mictronics</a> 每周更新的 ADS-B 飞机数据库。如果一架飞机不在这个数据库里，多半已退役 / 封存 / 转售。</li>
-    <li><b>典型舱位布局</b>：基于公开座位图人工整理，按 <em>(航司, 机型)</em> 提供典型配置；找不到时按机型给出通用布局。同一航司同一机型实际可能存在多种配置，结果仅供参考。</li>
+    <li>基础记录来自 <a href="https://opensky-network.org/data/aircraft" target="_blank" rel="noopener">OpenSky 公开快照</a>。<a href="https://github.com/wiedehopf/tar1090-db" target="_blank" rel="noopener">tar1090-db</a> 提供补充机型和注册号资料。</li>
+    <li>登记核验使用 <a href="https://www.faa.gov/licenses_certificates/aircraft_certification/aircraft_registry/releasable_aircraft_download" target="_blank" rel="noopener">美国 FAA 登记快照</a>和<a href="https://www.aacm.gov.mo/en/industry-page/RegisteredAircraft" target="_blank" rel="noopener">澳门民航局登记册</a>。</li>
+    <li>客舱按航司和机型展示典型布局。座位图链接对应已知构型，实际航班以航司当班选座图为准。</li>
     <li><b>参考站点</b>：<a href="http://www.xmyzl.com/?mod=jidui" target="_blank" rel="noopener">民航休闲小站</a>（中国机队动态资讯）。</li>
   </ul>
   <h3>注意</h3>
   <ul>
-    <li>OpenSky 数据按月发布，新引进的飞机可能未及时入库。</li>
-    <li>客舱布局以航司公布为准，本工具显示的是 <em>典型布局</em>，并非每架飞机的实际座椅图。</li>
-    <li><b>三种服役状态</b>：
-      <ul>
-        <li><span style="color:#7a6320;font-weight:600;">久未活跃</span>（中等置信）— 在 OpenSky 但 Mictronics 实时库不收录，多半已停飞 / 拆解 / 转售。</li>
-        <li><span style="color:#8a3a3a;font-weight:600;">已注销</span>（高置信）— OpenSky 的注册到期日已过，民航局已撤销注册。</li>
-        <li>无标签 — 在 Mictronics 实时库中，最近仍有 ADS-B 信号。</li>
-      </ul>
-    </li>
+    <li>OpenSky 的快照时间显示在下方。较新的飞机可能尚未收录。</li>
+    <li>tar1090 的匹配依据为注册号及六位地址。实时飞行情形可查看追踪链接。</li>
+    <li>登记注销来自 FAA 历史登记。OpenSky 旧记录里的登记到期日已过时标为待核实。</li>
     <li>未列入白名单的航司、私人飞机、军用机一般不在数据中（中国大陆/港澳台注册号宽松保留）。</li>
     <li>本工具不保留任何用户数据，所有查询都在你的设备上完成。</li>
   </ul>

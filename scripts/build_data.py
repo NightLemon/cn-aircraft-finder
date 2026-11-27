@@ -16,10 +16,12 @@ from __future__ import annotations
 import argparse
 import calendar
 import csv
+import hashlib
 import json
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -59,7 +61,11 @@ MICTRONICS_CSV = ROOT / "data" / "raw" / "mictronics.csv"
 OPERATORS_JSON = ROOT / "data" / "operators.json"
 TYPES_JSON = ROOT / "data" / "aircraft_types.json"
 LAYOUTS_JSON = ROOT / "data" / "cabin_layouts.json"
+SEAT_MAPS_JSON = ROOT / "data" / "seat_maps.json"
+AIRFRAME_CORRECTIONS_JSON = ROOT / "data" / "airframe_corrections.json"
+FAA_CORRECTIONS_JSON = ROOT / "data" / "faa_corrections.json"
 SOURCE_TXT = ROOT / "data" / "raw" / "source.txt"
+MI_SOURCE_TXT = ROOT / "data" / "raw" / "mictronics-source.txt"
 
 OUT_DIR = ROOT / "public" / "data"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -178,6 +184,10 @@ def parse_date(s: str) -> str:
     if not m:
         return ""
     y, mo, d = m.group(1), m.group(2), m.group(3)
+    try:
+        date(int(y), int(mo or 1), int(d or 1))
+    except ValueError:
+        return ""
     if d:
         return f"{y}-{mo}-{d}"
     if mo:
@@ -218,21 +228,29 @@ def resolve_operator(operator: str, owner: str, op_icao: str, op_iata: str, ops:
     by_icao = ops["by_icao"]
     by_kw = ops["by_owner_keyword"]
 
-    if op_icao and op_icao in by_icao and is_real_op_entry(by_icao[op_icao]):
-        rec = dict(by_icao[op_icao])
-        rec["icao"] = op_icao
-        return rec, True
-
-    for field in (operator, owner):
+    def named(field):
         if not field:
-            continue
+            return None
         if field in by_kw and is_real_op_entry(by_kw[field]):
-            return dict(by_kw[field]), True
+            return by_kw[field]
+        normalized = field.casefold()
         for k, v in by_kw.items():
-            if not is_real_op_entry(v):
-                continue
-            if field.lower().startswith(k.lower()):
-                return dict(v), True
+            if is_real_op_entry(v) and normalized.startswith(k.casefold()):
+                return v
+        return None
+
+    if op_icao in OPERATOR_CODES_TO_RECHECK:
+        # Some imported records use these codes for the wrong carrier. An
+        # explicit operator name can disambiguate the legacy assignments.
+        rec = named(operator)
+        if rec:
+            return rec, True
+    if is_real_op_entry(by_icao.get(op_icao)):
+        return {**by_icao[op_icao], "icao": op_icao}, True
+
+    rec = named(operator) or named(owner)
+    if rec:
+        return rec, True
     return None, False
 
 
@@ -252,9 +270,10 @@ def resolve_type(typecode: str, model: str, manufacturer: str, types: dict) -> d
 def resolve_cabin(operator_icao: str, typecode: str, layouts: dict) -> dict:
     by_op = layouts.get("by_operator_type", {})
     fb = layouts.get("fallback_by_type", {})
-    key = f"{operator_icao}:{typecode}"
-    if key in by_op:
-        rec = dict(by_op[key])
+    alias = layouts.get("type_aliases", {}).get(typecode, typecode)
+    matching_layout = by_op.get(f"{operator_icao}:{typecode}") or by_op.get(f"{operator_icao}:{alias}")
+    if matching_layout:
+        rec = dict(matching_layout)
         rec["source"] = "curated"
         return rec
     if typecode in fb:
@@ -264,327 +283,298 @@ def resolve_cabin(operator_icao: str, typecode: str, layouts: dict) -> dict:
     return {}
 
 
+# Commercial records outside Greater China can be supplied by either dataset.
+COMMERCIAL = {"widebody", "narrowbody", "regional", "freighter"}
+TYPE_ALIASES = {"C909": "AJ27", "G450": "GLF4", "G550": "GLF5", "G650": "GLF6"}
+OPERATOR_CODES_TO_RECHECK = {"GDC", "FLZ", "AUL", "TPU", "SNJ", "AJX", "CTJ", "HYT"}
+B_REG = re.compile(r"B[A-HJ-NP-Z0-9]{3,5}")
+
+
+def registration_key(value: str) -> str:
+    reg = re.sub(r"\s+", "", strip(value)).upper()
+    if re.fullmatch(r"[12][0-9]{3}-[0-9]{2}-[0-9]{2}", reg):
+        return ""
+    compact = reg.replace("-", "")
+    return "B-" + compact[1:] if B_REG.fullmatch(compact) else reg
+
+
+def serial_key(value: str) -> str:
+    key = re.sub(r"[^A-Z0-9]", "", value.upper())
+    if key.isdecimal():
+        return key.lstrip("0") or "0"
+    return key
+
+
+def airframe_address(value: str) -> str:
+    code = strip(value).lower()
+    return code if re.fullmatch(r"[0-9a-f]{6}", code) else ""
+
+
+def type_key(value: str) -> str:
+    return TYPE_ALIASES.get(value.upper(), value.upper())
+
+
+def text_file(path: Path) -> str:
+    return path.read_text(encoding="utf-8").strip() if path.exists() else ""
+
+
+def read_mictronics() -> dict:
+    # Match a registration and address together. The metadata catalogue has
+    # no last-seen time. Presence is kept as a filter, not an activity claim.
+    aircraft = {}
+    addresses = set()
+    with MICTRONICS_CSV.open(encoding="utf-8", errors="replace") as source:
+        for row in csv.reader(source, delimiter=";"):
+            if len(row) < 2:
+                continue
+            address = airframe_address(row[0])
+            if not address:
+                continue
+            addresses.add(address)
+            reg = registration_key(row[1])
+            if reg:
+                aircraft.setdefault(reg, []).append((address, *row[2:7]))
+    if len(addresses) <= 50_000:
+        raise SystemExit(f"Mictronics DB is incomplete ({len(addresses):,} addresses).")
+    print(f"[build] Mictronics: {len(addresses):,} addresses, {len(aircraft):,} registrations", file=sys.stderr)
+    return aircraft
+
+
+def read_opensky(resolve, registry_ops, counter) -> dict:
+    aircraft = {}
+    with RAW_CSV.open(encoding="utf-8-sig", newline="") as source:
+        reader = csv.reader(source)
+        header = [strip(value) for value in next(reader)]
+        fields = {
+            "reg": "registration", "icao24": "icao24", "country": "country",
+            "type": "typecode", "model": "model", "owner": "owner", "operator": "operator",
+            "operator_icao": "operatorIcao", "operator_iata": "operatorIata",
+            "built": "built", "status": "status", "serial": "serialNumber",
+            "registered": "registered", "reg_until": "regUntil", "next_reg": "nextReg",
+        }
+        indices = {key: header.index(value) for key, value in fields.items() if value in header}
+        for row in reader:
+            if len(row) < len(header):
+                continue
+            counter["total"] += 1
+            reg = registration_key(row[indices["reg"]])
+            if not reg:
+                continue
+            data = {key: strip(row[index]) for key, index in indices.items()}
+            matched = resolve(data.get("operator", ""), data.get("owner", ""), data.get("operator_icao", ""))[1]
+            from_greater_china = data.get("country") in GREATER_CHINA or bool(B_REG.fullmatch(reg.replace("-", "")))
+            if not matched and reg not in registry_ops:
+                if not from_greater_china or not any(data.get(key) for key in ("type", "model", "owner", "operator")):
+                    continue
+            data.update(reg=reg, icao24=airframe_address(data.get("icao24", "")), type=type_key(data.get("type", "")))
+            aircraft.setdefault(reg, []).append(data)
+    return aircraft
+
+
+def materialize_mictronics(reg, records, resolve, types, opensky_match):
+    result = []
+    country = _country_from_reg(reg)
+    region = REG_PREFIX_REGION.get(_reg_prefix(reg), "")
+    for record in records:
+        address, code, _flags, model, built, owner = (*record, *[""] * (6 - len(record)))
+        code = type_key(strip(code))
+        owner = strip(owner)
+        if not opensky_match and country not in GREATER_CHINA and not resolve("", owner, "")[1]:
+            if types.get(code, {}).get("category") not in COMMERCIAL or region not in _MI_SUPPLEMENT_REGIONS:
+                continue
+        if code or model or owner:
+            result.append(dict(reg=reg, icao24=address, country=country, type=code, model=strip(model),
+                               built=strip(built), owner=owner))
+    return result
+
+
+def select_record(reg, opensky, mictronics, manual, faa, faa_date, types):
+    """Resolve identity before inheriting metadata from either source."""
+    examined = opensky + mictronics
+    if manual:
+        matches = [row for row in examined if row["icao24"] == manual["match_icao24"]]
+        if matches:
+            return {**matches[0], **manual["fields"], "source": "reviewed"}
+
+    for correction in sorted(faa, key=lambda item: item["registration_status"] == "cancelled"):
+        serial = correction["match_serial"]
+        limit = correction.get("cancelled_at", faa_date)
+        for row in opensky:
+            if serial != serial_key(row.get("serial", "")) or parse_date(row.get("registered", "")) > limit:
+                continue
+            status = correction["registration_status"]
+            if status == "cancelled" and any(
+                serial_key(item.get("serial", "")) not in ("", serial) for item in opensky
+            ):
+                break
+            if status == "conflict":
+                return {"reg": reg, "registration_status": status, "country": "United States", "source": "faa"}
+            payload = {key: value for key, value in correction.items() if key not in ("match_serial", "before")}
+            # A reassignment is a different airframe. No airline, cabin,
+            # manufacture date or history follows the old tail number.
+            fields = {"reg": reg} if status == "reassigned" else row.copy()
+            fields.update(payload, source="faa")
+            if status == "faa_valid" and "type" not in payload:
+                same_address = next((item for item in opensky
+                                     if item["icao24"] == fields["icao24"] and item.get("type")
+                                     and serial_key(item.get("serial", "")) in ("", serial)), None)
+                if same_address:
+                    fields["type"] = same_address["type"]
+            return fields
+
+    addresses = {row["icao24"] for row in examined if row["icao24"]}
+    serials = {serial_key(row["serial"]) for row in opensky if row.get("serial")}
+    if len(addresses) > 1 or len(serials) > 1:
+        return {"reg": reg, "registration_status": "conflict", "country": _country_from_reg(reg)}
+
+    def rank(row):
+        return (bool(row["icao24"]), bool(row.get("serial")), row.get("type") in types,
+                bool(row.get("model")), bool(row.get("operator_icao")))
+
+    row = max(opensky or mictronics, key=rank).copy()
+    for other in mictronics:
+        if not row["icao24"] or row["icao24"] != other["icao24"]:
+            continue
+        original_type, other_type = row.get("type"), other.get("type")
+        if original_type not in types and other_type in types:
+            row.update(type=other_type)
+            if other["model"]:
+                row["model"] = other["model"]
+        elif original_type in types and other_type in types and original_type != other_type:
+            row["type_disputed"] = True
+        elif not row.get("model") and other["model"]:
+            row["model"] = other["model"]
+        if not row.get("built") and other["built"]:
+            row["built"] = other["built"]
+    return row
+
+
+def publish_row(row, tar_records, registry_operator, resolve, types, layouts, snapshot_cutoff):
+    reg = row["reg"]
+    status = row.get("registration_status", "")
+    if registry_operator and row.get("type") == registry_operator["type"]:
+        row = {**row, "country": "Macao", "source": "aacm"}
+        if registry_operator.get("operator_icao"):
+            row.update(operator_icao=registry_operator["operator_icao"], operator="", operator_iata="")
+    operator, owner = row.get("operator", ""), row.get("owner", "")
+    code = row.get("operator_icao", "")
+    op, matched = resolve(operator, owner, code)
+    op = op or {}
+    op_name = op.get("name_zh") or operator or owner
+    short_name = op.get("short_zh", "")
+    py_full, py_init = to_pinyin(op_name)
+    if short_name:
+        short_full, short_init = to_pinyin(short_name)
+        py_full, py_init = (py_full + " " + short_full).strip(), (py_init + " " + short_init).strip()
+
+    country = row.get("country") or _country_from_reg(reg)
+    region = ("macau" if row.get("source") == "aacm" else
+              op.get("region") or GC_REGION_DEFAULT.get(country) or REG_PREFIX_REGION.get(_reg_prefix(reg), "other"))
+    typecode = row.get("type", "")
+    model = row.get("model", "")
+    type_rec = resolve_type(typecode, model, "", types)
+    known_operator = op.get("icao", code)
+    address = row.get("icao24", "")
+    in_mictronics = (status not in {"reassigned", "cancelled", "conflict"}
+                     and bool(address and any(record[0] == address for record in tar_records)))
+    retired = status == "cancelled"
+    reg_until = parse_date(row.get("reg_until", ""))
+    if not status and reg_until and date_key(reg_until) < snapshot_cutoff:
+        status = "expiry_reported"
+    entry = {
+        "reg": reg, "icao24": address, "country": country, "type": typecode,
+        "type_zh": type_rec["name_zh"], "type_en": type_rec["name_en"], "category": type_rec.get("category", "other"),
+        "model": model, "operator_icao": known_operator, "operator_iata": op.get("iata", row.get("operator_iata", "")),
+        "operator_zh": op_name, "operator_short_zh": short_name, "operator_en": op.get("name_en") or operator or owner,
+        "operator_py": py_full, "operator_py_init": py_init, "region": region, "alliance": op.get("alliance", ""),
+        "built": parse_date(row.get("built", "")), "in_service_at": parse_date(row.get("registered", "")),
+        "reg_until": reg_until, "retired_at": row.get("cancelled_at", ""), "next_reg": row.get("next_reg", ""),
+        "retired": retired, "inactive": not retired and not in_mictronics, "status": row.get("status", ""),
+        "serial": row.get("serial", ""), "registration_status": status,
+        "provenance": row.get("source", ""), "type_disputed": row.get("type_disputed", False),
+    }
+    apply_cabin(entry, layouts, types)
+    return {key: value for key, value in entry.items() if value}, matched, in_mictronics
+
+
+def published_cabin(row, layouts):
+    if row.get("type_disputed") or row.get("registration_status") in {"conflict", "reassigned", "cancelled"}:
+        return {}
+    return resolve_cabin(row.get("operator_icao", ""), row.get("type", ""), layouts)
+
+
+def apply_cabin(row, layouts, types):
+    cabin = published_cabin(row, layouts)
+    if cabin:
+        row["cabin"] = cabin
+    else:
+        row.pop("cabin", None)
+    if row.get("type_disputed"):
+        row["category"] = "other"
+    elif cabin.get("layout") == "纯货机":
+        row["category"] = "freighter"
+    elif row.get("type") in types:
+        row["category"] = types[row["type"]]["category"]
+
+
 def main() -> int:
-    if not RAW_CSV.exists():
-        print(f"missing {RAW_CSV}; run scripts/fetch_opensky.py first", file=sys.stderr)
+    if not RAW_CSV.exists() or not MICTRONICS_CSV.exists():
+        print("Missing raw aircraft data. Run scripts/fetch_opensky.py first.", file=sys.stderr)
         return 2
 
     ops = load_json(OPERATORS_JSON)
     types = load_json(TYPES_JSON)
     layouts = load_json(LAYOUTS_JSON)
+    official = load_json(AIRFRAME_CORRECTIONS_JSON)
+    faa = load_json(FAA_CORRECTIONS_JSON)
+    source = text_file(SOURCE_TXT)
+    month = re.search(r"[0-9]{4}-[0-9]{2}", source)
+    snapshot_month = month[0] if month else datetime.now(timezone.utc).strftime("%Y-%m")
+    faa_by_reg = faa["by_registration"] if snapshot_month <= faa["date"][:7] else {}
 
-    # Mictronics tar1090 DB — weekly-updated registry of aircraft seen on ADS-B.
-    # Two roles:
-    #   (a) activity signal — if a record is in OpenSky but missing from
-    #       Mictronics, the aircraft is likely retired / stored / sold.
-    #   (b) supplementary supply — OpenSky's monthly snapshot misses tens of
-    #       thousands of currently-flying airframes (especially European F-/D-/G-
-    #       regs). We pull those in too so users searching for, e.g., F-GSPX
-    #       don't see "no result". Operator is left empty when Mictronics
-    #       doesn't know it; the frontend recovers the airline from the
-    #       Planespotters photo slug.
-    mictronics_icao: set[str] = set()
-    mictronics_reg: set[str] = set()
-    mictronics_ok = False
-    # reg -> (icao24, typecode, model, owner, built_year)
-    mictronics_rows: dict[str, tuple[str, str, str, str, str]] = {}
-    if MICTRONICS_CSV.exists():
-        with MICTRONICS_CSV.open(encoding="utf-8", errors="replace") as f:
-            mrd = csv.reader(f, delimiter=";")
-            for row in mrd:
-                if len(row) < 2:
-                    continue
-                icao = (row[0] or "").strip().lower()
-                rg = (row[1] or "").strip()
-                if icao:
-                    mictronics_icao.add(icao)
-                if rg:
-                    mictronics_reg.add(rg)
-                    if rg not in mictronics_rows:
-                        mictronics_rows[rg] = (
-                            icao,
-                            (row[2] or "").strip() if len(row) > 2 else "",
-                            (row[4] or "").strip() if len(row) > 4 else "",
-                            (row[6] or "").strip() if len(row) > 6 else "",
-                            (row[5] or "").strip() if len(row) > 5 else "",
-                        )
-        # Sanity floor: a healthy Mictronics dump has >100k rows. If the file is
-        # truncated/empty, refuse to use it (otherwise we'd flag everything inactive).
-        mictronics_ok = len(mictronics_icao) > 50_000
-        if mictronics_ok:
-            print(f"[build] Mictronics: {len(mictronics_icao):,} icao24, {len(mictronics_reg):,} regs", file=sys.stderr)
-        else:
-            raise SystemExit(
-                f"Mictronics looks truncated ({len(mictronics_icao):,} rows); "
-                "refusing to publish degraded activity data."
-            )
-    else:
-        raise SystemExit("Mictronics DB missing; refusing to publish degraded activity data.")
+    @lru_cache(maxsize=32_768)
+    def resolve(operator, owner, code):
+        return resolve_operator(operator, owner, code, "", ops)
 
-    aircraft: list[dict] = []
-    seen_regs: set[str] = set()
-    counter = {"total": 0, "kept": 0, "matched": 0, "gc_unmatched": 0,
-               "retired": 0, "active": 0, "inactive": 0, "in_mictronics": 0}
-
-    # Snapshot month derived from data/raw/source.txt — used to decide whether
-    # ``regUntil`` falls in the past (i.e. aircraft is de-registered/retired).
-    src_text = SOURCE_TXT.read_text(encoding="utf-8").strip() if SOURCE_TXT.exists() else ""
-    m = re.search(r"(\d{4})-(\d{2})", src_text)
-    if m:
-        snapshot_month = f"{m.group(1)}-{m.group(2)}"
-    else:
-        snapshot_month = datetime.now(timezone.utc).strftime("%Y-%m")
-    snapshot_cutoff = snapshot_month + "-15"  # mid-month cutoff
-
-    with RAW_CSV.open(encoding="utf-8") as f:
-        rd = csv.reader(f)
-        header = [strip(h) for h in next(rd)]
-        idx = {h: i for i, h in enumerate(header)}
-
-        def col(row, k):
-            return strip(row[idx[k]]) if k in idx and idx[k] < len(row) else ""
-
-        for row in rd:
-            if len(row) < len(header):
-                continue
-            counter["total"] += 1
-            reg = col(row, "registration")
-            if not reg:
-                continue
-            if reg in seen_regs:
-                continue
-
-            country = col(row, "country")
-            typecode = col(row, "typecode")
-            model = col(row, "model")
-            manufacturer = col(row, "manufacturerName")
-            owner = col(row, "owner")
-            operator = col(row, "operator")
-            op_icao = col(row, "operatorIcao")
-            op_iata = col(row, "operatorIata")
-            built = col(row, "built")
-            status = col(row, "status")
-            icao24 = col(row, "icao24")
-            serial = col(row, "serialNumber")
-            registered = parse_date(col(row, "registered"))
-            reg_until = parse_date(col(row, "regUntil"))
-            built = parse_date(built)
-            next_reg = col(row, "nextReg")
-
-            op_rec, matched = resolve_operator(operator, owner, op_icao, op_iata, ops)
-            in_gc = country in GREATER_CHINA
-
-            if not matched and not in_gc:
-                continue
-            if not matched and in_gc and not (typecode or model or owner or operator):
-                continue
-
-            seen_regs.add(reg)
-            counter["kept"] += 1
-            if matched:
-                counter["matched"] += 1
-            else:
-                counter["gc_unmatched"] += 1
-
-            type_rec = resolve_type(typecode, model, manufacturer, types)
-
-            if op_rec is None:
-                op_rec = {
-                    "icao": op_icao,
-                    "iata": op_iata,
-                    "name_zh": operator or owner or "",
-                    "short_zh": "",
-                    "name_en": operator or owner or "",
-                    "region": GC_REGION_DEFAULT.get(country, "other"),
-                }
-
-            cabin = resolve_cabin(op_rec.get("icao", "") or op_icao, typecode, layouts)
-
-            # ----- Service status -----
-            # Three tiers, in decreasing confidence:
-            #   1. retired (high)    : OpenSky regUntil already past the snapshot.
-            #                          The civil-aviation registry says "de-registered".
-            #   2. inactive (medium) : present in OpenSky but absent from Mictronics
-            #                          tar1090 DB, which is updated weekly from live
-            #                          ADS-B feeds. Likely stored / scrapped / sold.
-            #   3. active            : present in Mictronics, or no signal to suggest otherwise.
-            in_mi = (icao24.lower() in mictronics_icao) or (reg in mictronics_reg)
-            retired = bool(reg_until and date_key(reg_until) < snapshot_cutoff)
-            inactive = (not retired) and (not in_mi) and mictronics_ok
-            if retired:
-                counter["retired"] += 1
-            elif inactive:
-                counter["inactive"] += 1
-            else:
-                counter["active"] += 1
-            if in_mi:
-                counter["in_mictronics"] += 1
-
-            operator_zh = op_rec.get("name_zh", "") or operator or owner
-            operator_short_zh = op_rec.get("short_zh", "")
-            py_full, py_init = to_pinyin(operator_zh)
-            if operator_short_zh:
-                spf, spi = to_pinyin(operator_short_zh)
-                py_full = (py_full + " " + spf).strip()
-                py_init = (py_init + " " + spi).strip()
-
-            entry = {
-                "reg": reg,
-                "icao24": icao24,
-                "country": country,
-                "type": typecode,
-                "type_zh": type_rec["name_zh"],
-                "type_en": type_rec["name_en"],
-                "category": type_rec.get("category", "other"),
-                "model": model,
-                "operator_icao": op_rec.get("icao", "") or op_icao,
-                "operator_iata": op_rec.get("iata", "") or op_iata,
-                "operator_zh": operator_zh,
-                "operator_short_zh": operator_short_zh,
-                "operator_en": op_rec.get("name_en", "") or operator or owner,
-                "operator_py": py_full,
-                "operator_py_init": py_init,
-                "region": op_rec.get("region", ""),
-                "alliance": op_rec.get("alliance", ""),
-                "built": built,
-                "in_service_at": registered,
-                "retired_at": reg_until if retired else "",
-                "reg_until": reg_until if not retired else "",
-                "next_reg": next_reg,
-                "retired": retired,
-                "inactive": inactive,
-                "status": status,
-                "serial": serial,
-                "cabin": cabin,
-            }
-            # Drop empty fields (but keep retired/inactive=False off — only emit when True).
-            cleaned = {}
-            for k, v in entry.items():
-                if k in ("retired", "inactive"):
-                    if v:
-                        cleaned[k] = True
-                    continue
-                if v not in ("", {}, None):
-                    cleaned[k] = v
-            aircraft.append(cleaned)
-
-    # ---------- Mictronics supplementary pass ----------
-    # Pull in airframes Mictronics knows about but OpenSky's monthly snapshot
-    # missed (~83k as of 2025-08). Without this, currently-flying jets like
-    # Air France's F-GSPX would simply not appear.
-    #
-    # Filter strategy:
-    #   1. Always keep if owner matches our airline whitelist.
-    #   2. Always keep if the registration is Greater China.
-    #   3. Otherwise keep only if the typecode resolves to a commercial
-    #      category (widebody/narrowbody/regional/freighter) AND the reg
-    #      prefix maps to a region we cover. Operator may be left empty —
-    #      the frontend recovers it from the Planespotters photo slug.
-    #
-    # This intentionally lets in tens of thousands of airframes whose
-    # operator we don't know yet, but excludes the half-million private
-    # GA/heli/biz tails that pollute the dataset.
-    _COMMERCIAL_CATS = {"widebody", "narrowbody", "regional", "freighter"}
-    if mictronics_ok:
-        mi_added = 0
-        for reg, (icao24, typecode, model, owner, built_year) in mictronics_rows.items():
-            if reg in seen_regs:
-                continue
-            country = _country_from_reg(reg)
-            region_from_prefix = REG_PREFIX_REGION.get(_reg_prefix(reg), "")
-            op_rec, matched = resolve_operator("", owner, "", "", ops)
-            in_gc = country in GREATER_CHINA
-            type_rec_tmp = resolve_type(typecode, model, "", types) if typecode else None
-            is_commercial = (type_rec_tmp and type_rec_tmp.get("category") in _COMMERCIAL_CATS)
-
-            # Filter
-            if matched:
-                pass  # always keep
-            elif in_gc:
-                if not (typecode or model or owner): continue
-            elif is_commercial and region_from_prefix in _MI_SUPPLEMENT_REGIONS:
-                pass  # commercial widebody/narrowbody from a covered region
-            else:
-                continue
-
-            seen_regs.add(reg)
-            mi_added += 1
-
-            type_rec = type_rec_tmp or resolve_type(typecode, model, "", types)
-            if op_rec is None:
-                op_rec = {
-                    "icao": "", "iata": "",
-                    "name_zh": owner or "",
-                    "short_zh": "",
-                    "name_en": owner or "",
-                    "region": GC_REGION_DEFAULT.get(country, region_from_prefix) or region_from_prefix,
-                }
-            cabin = resolve_cabin(op_rec.get("icao", ""), typecode, layouts)
-            built = built_year if built_year and len(built_year) == 4 else ""
-
-            operator_zh = op_rec.get("name_zh", "") or owner or ""
-            operator_short_zh = op_rec.get("short_zh", "")
-            py_full, py_init = to_pinyin(operator_zh)
-            if operator_short_zh:
-                spf, spi = to_pinyin(operator_short_zh)
-                py_full = (py_full + " " + spf).strip()
-                py_init = (py_init + " " + spi).strip()
-
-            entry = {
-                "reg": reg,
-                "icao24": icao24,
-                "country": country,
-                "type": typecode,
-                "type_zh": type_rec["name_zh"],
-                "type_en": type_rec["name_en"],
-                "category": type_rec.get("category", "other"),
-                "model": model,
-                "operator_icao": op_rec.get("icao", ""),
-                "operator_iata": op_rec.get("iata", ""),
-                "operator_zh": operator_zh,
-                "operator_short_zh": operator_short_zh,
-                "operator_en": op_rec.get("name_en", "") or owner or "",
-                "operator_py": py_full,
-                "operator_py_init": py_init,
-                "region": op_rec.get("region", "") or region_from_prefix,
-                "alliance": op_rec.get("alliance", ""),
-                "built": built,
-                "in_service_at": "",
-                "retired_at": "",
-                "reg_until": "",
-                "next_reg": "",
-                "retired": False,
-                "inactive": False,
-                "status": "",
-                "serial": "",
-                "cabin": cabin,
-            }
-            cleaned = {}
-            for k, v in entry.items():
-                if k in ("retired", "inactive"):
-                    if v: cleaned[k] = True
-                    continue
-                if v not in ("", {}, None):
-                    cleaned[k] = v
-            aircraft.append(cleaned)
-            counter["active"] += 1
-            counter["in_mictronics"] += 1
-            if matched:
-                counter["matched"] += 1
-            else:
-                counter["gc_unmatched"] += 1
-            counter["kept"] += 1
-        print(f"[build] Mictronics supplement: +{mi_added:,} airframes", file=sys.stderr)
-
-    aircraft.sort(key=lambda a: a["reg"])
+    counter = dict.fromkeys(("total", "kept", "matched", "gc_unmatched", "retired", "active",
+                             "inactive", "in_mictronics", "faa", "aacm", "reviewed", "registration_conflicts",
+                             "type_conflicts"), 0)
+    tar = read_mictronics()
+    opensky = read_opensky(resolve, official["macao"]["by_registration"], counter)
+    aircraft = []
+    supplemental = 0
+    for reg in sorted(opensky.keys() | tar.keys()):
+        first = opensky.get(reg, [])
+        tar_records = tar.get(reg, [])
+        other = materialize_mictronics(reg, tar_records, resolve, types, bool(first))
+        if not first and not other:
+            continue
+        row = select_record(reg, first, other, official["by_registration"].get(reg), faa_by_reg.get(reg, []),
+                            faa["date"], types)
+        emitted, matched, in_mictronics = publish_row(row, tar_records, official["macao"]["by_registration"].get(reg),
+                                                      resolve, types, layouts, snapshot_month + "-15")
+        aircraft.append(emitted)
+        supplemental += not first
+        counter["matched" if matched else "gc_unmatched"] += 1
+        counter["retired" if emitted.get("retired") else "inactive" if emitted.get("inactive") else "active"] += 1
+        counter["in_mictronics"] += in_mictronics
+        counter["registration_conflicts"] += emitted.get("registration_status") == "conflict"
+        counter["type_conflicts"] += bool(emitted.get("type_disputed"))
+        if emitted.get("provenance"):
+            counter[emitted["provenance"]] += 1
+    counter["kept"] = len(aircraft)
+    print(f"[build] Mictronics supplement: +{supplemental:,} airframes", file=sys.stderr)
 
     write_aircraft(aircraft)
+    publish_cabin_layouts(layouts)
 
-    source = SOURCE_TXT.read_text(encoding="utf-8").strip() if SOURCE_TXT.exists() else ""
     meta = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source_csv": source,
         "snapshot_month": snapshot_month,
+        "mictronics_source": text_file(MI_SOURCE_TXT),
+        "registry_sources": {"faa": faa["date"], "macao": official["macao"]["date"]},
+        "data_version": public_data_version(),
         "total_aircraft": len(aircraft),
         "by_region": {},
         "by_operator": {},
@@ -621,8 +611,6 @@ def main() -> int:
     }
     OUT_META.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    publish_cabin_layouts(layouts)
-
     print(f"[build] processed {counter['total']:,} rows", file=sys.stderr)
     print(f"[build] kept {counter['kept']:,} aircraft "
           f"(matched={counter['matched']:,}, gc_unmatched={counter['gc_unmatched']:,})", file=sys.stderr)
@@ -651,14 +639,14 @@ def write_aircraft(aircraft: list[dict]) -> None:
     DICT_FIELDS = [
         "type", "category", "operator_icao", "operator_iata",
         "operator_zh", "operator_short_zh", "operator_en",
-        "type_zh", "type_en", "region", "alliance", "country",
+        "type_zh", "type_en", "region", "alliance", "country", "registration_status", "provenance",
     ]
     COPY_FIELDS = [
         "reg", "icao24", "model", "operator_py", "operator_py_init",
         "built", "in_service_at", "retired_at", "reg_until",
         "next_reg", "status", "serial",
     ]
-    BOOL_FIELDS = ["retired", "inactive"]
+    BOOL_FIELDS = ["retired", "inactive", "type_disputed"]
 
     dicts: dict[str, list[str]] = {f: [""] for f in DICT_FIELDS}
     dict_index: dict[str, dict[str, int]] = {f: {"": 0} for f in DICT_FIELDS}
@@ -716,26 +704,38 @@ def publish_cabin_layouts(layouts: dict) -> None:
     # (`_*` keys) are dropped to keep payload small.
     out_layouts = OUT_DIR / "cabin_layouts.json"
     slim = {
+        "type_aliases": layouts.get("type_aliases", {}),
         "by_operator_type": {k: v for k, v in layouts.get("by_operator_type", {}).items()
                              if isinstance(v, dict) and v.get("layout")},
         "fallback_by_type": {k: v for k, v in layouts.get("fallback_by_type", {}).items()
                              if isinstance(v, dict) and v.get("layout")},
     }
+    maps = load_json(SEAT_MAPS_JSON)
+    slim["seat_maps"] = {key: maps[key] for key in ("by_operator", "by_operator_type")}
     write_compact_json(out_layouts, slim)
+
+
+def public_data_version() -> str:
+    digest = hashlib.sha256()
+    for filename in ("aircraft.json", "aircraft.col.json", "cabin_layouts.json"):
+        with (OUT_DIR / filename).open("rb") as asset:
+            digest.update(hashlib.file_digest(asset, "sha256").digest())
+    return digest.hexdigest()[:16]
 
 
 def refresh_cabins() -> int:
     """Rebuild the cabin fields of the published snapshot without refreshing its aircraft."""
     aircraft = json.loads(OUT_AIRCRAFT.read_text(encoding="utf-8"))
     layouts = load_json(LAYOUTS_JSON)
+    types = load_json(TYPES_JSON)
     for row in aircraft:
-        cabin = resolve_cabin(row.get("operator_icao", ""), row.get("type", ""), layouts)
-        if cabin:
-            row["cabin"] = cabin
-        else:
-            row.pop("cabin", None)
+        apply_cabin(row, layouts, types)
     write_aircraft(aircraft)
     publish_cabin_layouts(layouts)
+    if OUT_META.exists():
+        meta = load_json(OUT_META)
+        meta["data_version"] = public_data_version()
+        OUT_META.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     return 0
 
 
